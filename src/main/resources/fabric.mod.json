@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "fatfingert",
+  "version": "${version}",
+  "name": "Fatfingert",
+  "description": "Misinput insurance for your hotbar. Reserve the offhand and hotbar slots for specific items so a fat-fingered key press or click can't wreck your loadout. Client-side only, no automation.",
+  "authors": [
+    "AlmondsMilk"
+  ],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/fatfingert/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "dev.fatfingert.FatfingertClient"
+    ],
+    "modmenu": [
+      "dev.fatfingert.compat.ModMenuIntegration"
+    ]
+  },
+  "mixins": [
+    "fatfingert.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.19.0",
+    "fabric-api": "*",
+    "minecraft": "~26.1.2",
+    "java": ">=25"
+  },
+  "suggests": {
+    "modmenu": "*"
+  }
+}

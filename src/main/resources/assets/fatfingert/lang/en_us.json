@@ -1,0 +1,18 @@
+{
+  "key.fatfingert.toggle": "Toggle Fatfingert",
+  "category.fatfingert": "Fatfingert",
+  "fatfingert.gui.title": "Fatfingert",
+  "fatfingert.gui.tagline": "misinput insurance",
+  "fatfingert.gui.slots": "Slots",
+  "fatfingert.gui.preset": "Preset",
+  "fatfingert.gui.armed": "Armed",
+  "fatfingert.gui.lock_contents": "Lock Contents",
+  "fatfingert.gui.strict_shift": "Strict Shift",
+  "fatfingert.gui.add_item": "+ Add Item",
+  "fatfingert.gui.back": "Back",
+  "fatfingert.gui.done": "Done",
+  "fatfingert.gui.search": "Search items...",
+  "fatfingert.gui.no_selection": "No key selected",
+  "fatfingert.gui.unguarded": "Unguarded — anything may go here",
+  "fatfingert.gui.credit": "made by AlmondsMilk"
+}
