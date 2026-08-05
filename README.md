@@ -4,7 +4,7 @@
 
 A client-side Fabric mod for **Minecraft 26.1.2** that reserves inventory slots (offhand and hotbar) for specific items, so a fat-fingered key press or click can't wreck your loadout mid-fight.
 
-It contains **zero automation**. Every mixin in this mod only ever *cancels* an input the player already generated — a key press, a click — before it turns into a packet. Nothing here presses keys, moves items, or talks to the server on the player's behalf, so it does not function as a cheat and should not trip anticheat that watches for injected inputs.
+It contains **zero automation**. Every mixin in this mod only ever *cancels* an input the player already generated, like a key press, a click, before it ever turns into a packet. Nothing here presses keys, moves items, or talks to the server on the player's behalf, so it does not function as a cheat and should not trip anticheat that watches for injected inputs.
 
 Made by **AlmondsMilk**.
 
