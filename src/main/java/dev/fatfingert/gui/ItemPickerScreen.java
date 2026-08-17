@@ -4,7 +4,7 @@ import dev.fatfingert.Fatfingert;
 import dev.fatfingert.FatfingertConfig;
 import dev.fatfingert.gui.widget.FatButton;
 import net.minecraft.ChatFormatting;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.MouseButtonEvent;
@@ -128,8 +128,8 @@ public class ItemPickerScreen extends Screen {
     // ---- rendering -----------------------------------------------------
 
     @Override
-    public void extractBackground(GuiGraphicsExtractor g, int mouseX, int mouseY, float delta) {
-        super.extractBackground(g, mouseX, mouseY, delta);
+    public void renderBackground(GuiGraphics g, int mouseX, int mouseY, float delta) {
+        super.renderBackground(g, mouseX, mouseY, delta);
 
         g.fillGradient(0, 0, this.width, this.height, FatTheme.SCRIM_TOP, FatTheme.SCRIM_BOT);
 
@@ -156,30 +156,32 @@ public class ItemPickerScreen extends Screen {
     }
 
     @Override
-    public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphics g, int mouseX, int mouseY, float delta) {
+        // super.render() paints the background (our card) and then the widgets,
+        // so our own chrome goes on top of it rather than before it.
+        super.render(g, mouseX, mouseY, delta);
+
         // Header
         FatTheme.logoMark(g, cardX + PAD, cardY + 12, 9, 8, 3);
         int textX = cardX + PAD + FatTheme.logoWidth(9) + 9;
-        g.text(this.font, "ADD TO " + Fatfingert.prettySlot(slotKey).toUpperCase(),
+        g.drawString(this.font, "ADD TO " + Fatfingert.prettySlot(slotKey).toUpperCase(),
                 textX, cardY + 12, FatTheme.TEXT, true);
-        g.text(this.font, filtered.size() + " item" + (filtered.size() == 1 ? "" : "s") + " match",
+        g.drawString(this.font, filtered.size() + " item" + (filtered.size() == 1 ? "" : "s") + " match",
                 textX, cardY + 24, FatTheme.TEXT_DIM, false);
 
         // Search glyph + placeholder
         FatTheme.magnifier(g, innerX + 6, searchY + 6, FatTheme.TEXT_MUTED, FatTheme.CARD_SUNK);
-
-        super.extractRenderState(g, mouseX, mouseY, delta);
 
         drawGrid(g, mouseX, mouseY);
 
         FatTheme.scrollbar(g, gridX + COLUMNS * CELL + 5, gridY, rows * CELL,
                 totalRows(), rows, scrollRow);
 
-        g.text(this.font, "click to add or remove",
+        g.drawString(this.font, "click to add or remove",
                 cardX + PAD + 74, footerY + 12, FatTheme.TEXT_MUTED, false);
     }
 
-    private void drawGrid(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+    private void drawGrid(GuiGraphics g, int mouseX, int mouseY) {
         List<String> rule = currentRule();
         int start = scrollRow * COLUMNS;
 
@@ -205,7 +207,7 @@ public class ItemPickerScreen extends Screen {
                     FatTheme.outlineGlow(g, x + 1, y + 1, CELL - 2, CELL - 2, FatTheme.BORDER_LIT);
                 }
 
-                g.item(new ItemStack(item), x + 3, y + 3);
+                g.renderItem(new ItemStack(item), x + 3, y + 3);
 
                 if (hovered) {
                     List<Component> lines = new ArrayList<>();

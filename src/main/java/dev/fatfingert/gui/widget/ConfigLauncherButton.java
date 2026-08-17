@@ -4,7 +4,7 @@ import dev.fatfingert.Fatfingert;
 import dev.fatfingert.gui.FatTheme;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.input.MouseButtonEvent;
@@ -28,7 +28,7 @@ public class ConfigLauncherButton extends AbstractWidget {
     }
 
     @Override
-    protected void extractWidgetRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float delta) {
+    protected void renderWidget(GuiGraphics g, int mouseX, int mouseY, float delta) {
         boolean hot = isHoveredOrFocused();
         int x = getX();
         int y = getY();

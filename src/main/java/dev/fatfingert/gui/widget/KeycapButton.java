@@ -5,7 +5,7 @@ import dev.fatfingert.gui.FatTheme;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.input.MouseButtonEvent;
@@ -44,7 +44,7 @@ public class KeycapButton extends AbstractWidget {
     }
 
     @Override
-    protected void extractWidgetRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float delta) {
+    protected void renderWidget(GuiGraphics g, int mouseX, int mouseY, float delta) {
         Font font = Minecraft.getInstance().font;
         int x = getX();
         int y = getY();
@@ -65,10 +65,10 @@ public class KeycapButton extends AbstractWidget {
         if (guarded) {
             ItemStack icon = Fatfingert.stackFor(rule.get(0));
             if (!icon.isEmpty()) {
-                g.item(icon, x + (w - 16) / 2, capTop + (capH - 16) / 2);
+                g.renderItem(icon, x + (w - 16) / 2, capTop + (capH - 16) / 2);
             }
             if (rule.size() > 1) {
-                g.text(font, "+" + (rule.size() - 1),
+                g.drawString(font, "+" + (rule.size() - 1),
                         x + w - font.width("+" + (rule.size() - 1)) - 2,
                         capTop + capH - font.lineHeight - 1,
                         FatTheme.TEXT, true);
@@ -80,7 +80,7 @@ public class KeycapButton extends AbstractWidget {
 
         // Slot number / OH under the cap.
         int labelColor = selected ? FatTheme.AMBER : guarded ? FatTheme.GREEN : FatTheme.TEXT_MUTED;
-        g.centeredText(font, Component.literal(label), x + w / 2, y + capH + depth + 3, labelColor);
+        g.drawCenteredString(font, Component.literal(label), x + w / 2, y + capH + depth + 3, labelColor);
 
         if (hot) {
             List<Component> lines = new ArrayList<>();

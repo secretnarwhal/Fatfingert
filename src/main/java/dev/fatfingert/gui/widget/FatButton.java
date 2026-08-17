@@ -3,7 +3,7 @@ package dev.fatfingert.gui.widget;
 import dev.fatfingert.gui.FatTheme;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.input.MouseButtonEvent;
@@ -43,7 +43,7 @@ public class FatButton extends AbstractWidget {
     }
 
     @Override
-    protected void extractWidgetRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float delta) {
+    protected void renderWidget(GuiGraphics g, int mouseX, int mouseY, float delta) {
         Font font = Minecraft.getInstance().font;
         boolean hot = isHoveredOrFocused() && this.active;
         int x = getX();
@@ -86,7 +86,7 @@ public class FatButton extends AbstractWidget {
         }
 
         int textY = y + (h - font.lineHeight) / 2 + 1;
-        g.centeredText(font, getMessage(), x + w / 2, textY, textColor);
+        g.drawCenteredString(font, getMessage(), x + w / 2, textY, textColor);
 
         if (hot && hint != null) {
             g.setTooltipForNextFrame(font, hint, Optional.empty(), mouseX, mouseY);

@@ -8,7 +8,7 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -123,7 +123,7 @@ public final class Fatfingert {
         return null;
     }
 
-    public static String clickBlockReason(Player player, int slotId, int button, ContainerInput actionType) {
+    public static String clickBlockReason(Player player, int slotId, int button, ClickType actionType) {
         AbstractContainerMenu menu = player.containerMenu;
         if (menu == null) return null;
 
@@ -279,8 +279,8 @@ public final class Fatfingert {
         lastMessageMs = now;
 
         if (Minecraft.getInstance().player != null) {
-            Minecraft.getInstance().player.sendOverlayMessage(
-                    Component.literal(reason).withStyle(ChatFormatting.RED));
+            Minecraft.getInstance().player.displayClientMessage(
+                    Component.literal(reason).withStyle(ChatFormatting.RED), true);
         }
     }
 }
