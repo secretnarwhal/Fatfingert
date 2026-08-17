@@ -2,7 +2,9 @@
 
 **Misinput insurance for your hotbar.**
 
-A client-side Fabric mod for **Minecraft 26.1.2** that reserves inventory slots (offhand and hotbar) for specific items, so a fat-fingered key press or click can't wreck your loadout mid-fight.
+A client-side Fabric mod for **Minecraft 1.21 – 1.21.1** that reserves inventory slots (offhand and hotbar) for specific items, so a fat-fingered key press or click can't wreck your loadout mid-fight.
+
+> **This is the `1.21` branch.** For Minecraft 26.1.2 and newer, see [`main`](https://github.com/secretnarwhal/Fatfingert/tree/main). The two branches are permanently divergent — the rule engine is shared, but the entire GUI layer differs because 26.1 rewrote how screens and widgets render. Fixes to shared logic are made on `main` and cherry-picked here.
 
 It contains **zero automation**. Every mixin in this mod only ever *cancels* an input the player already generated, like a key press, a click, before it ever turns into a packet. Nothing here presses keys, moves items, or talks to the server on the player's behalf, so it does not function as a cheat and should not trip anticheat that watches for injected inputs.
 
@@ -51,7 +53,7 @@ public static class Preset {
 }
 ```
 
-Slot keys are `"offhand"` and `"hotbar0"` through `"hotbar8"` (`hotbar0` is the leftmost hotbar slot, matching `Inventory.getSelectedSlot()`'s indexing). A slot with **no entry** in `rules` is unguarded — vanilla behavior, anything goes. A slot with an **empty list** is treated the same as no entry (`Fatfingert.ruleFor()` normalizes `[]` to `null`) so a UI bug that leaves a dangling empty list can't accidentally brick a slot shut.
+Slot keys are `"offhand"` and `"hotbar0"` through `"hotbar8"` (`hotbar0` is the leftmost hotbar slot, matching `Inventory.selected`'s indexing). A slot with **no entry** in `rules` is unguarded — vanilla behavior, anything goes. A slot with an **empty list** is treated the same as no entry (`Fatfingert.ruleFor()` normalizes `[]` to `null`) so a UI bug that leaves a dangling empty list can't accidentally brick a slot shut.
 
 Only one preset is active at a time (`FatfingertConfig.activePreset`), and every rule lookup goes through `Fatfingert.activePreset()`, which falls back to an empty `Preset` if the active key somehow doesn't resolve — so a corrupt or mid-edit config degrades to "nothing is guarded" rather than throwing.
 
@@ -78,9 +80,9 @@ Three mixins, each targeting the narrowest vanilla method that still sees every 
 
 Runs once a client tick, before vanilla consumes any queued key clicks. It **peeks** at whether the pending F-key (swap-to-offhand) or Q-key (drop) press would violate a rule, and if so, drains the key's click queue (`consumeClick()` in a `while` loop, since a key can queue multiple presses per tick) without letting vanilla see it. The key is confirmed pressed *before* the notification fires, so a background repeat-key spam doesn't spam the block message — `notifyBlocked` is separately rate-limited to one message per 400ms regardless.
 
-### `ClientPlayerInteractionManagerMixin` → `MultiPlayerGameMode.handleContainerInput()` (`@At("HEAD")`, cancellable)
+### `ClientPlayerInteractionManagerMixin` → `MultiPlayerGameMode.handleInventoryMouseClick()` (`@At("HEAD")`, cancellable)
 
-The single funnel for every inventory-screen interaction: clicks, shift-clicks (`QUICK_MOVE`), number-key hotbar swaps (`SWAP`), drag-splitting (`QUICK_CRAFT`), F-swap while hovering a slot, and throws (`THROW`/`PICKUP_ALL` variants). `Fatfingert.clickBlockReason()` switches on the vanilla `ContainerInput` action type and inspects whichever slots that action touches; if it returns non-null, `ci.cancel()` stops vanilla from ever sending the packet.
+The single funnel for every inventory-screen interaction: clicks, shift-clicks (`QUICK_MOVE`), number-key hotbar swaps (`SWAP`), drag-splitting (`QUICK_CRAFT`), F-swap while hovering a slot, and throws (`THROW`/`PICKUP_ALL` variants). `Fatfingert.clickBlockReason()` switches on the vanilla `ClickType` action type and inspects whichever slots that action touches; if it returns non-null, `ci.cancel()` stops vanilla from ever sending the packet.
 
 This is also where **strict shift-click** lives. Vanilla's own shift-click destination logic is not exposed to mixins in a reusable form, so rather than re-implementing Minecraft's slot-fill algorithm, strict mode approximates it: if the source item isn't already known to be disallowed via its slot, but *some* guarded hotbar slot is both empty and doesn't allow it, the shift-click is blocked on the assumption vanilla might route the item there. This deliberately over-blocks in ambiguous cases — see [Known limits](#known-limits-by-design).
 
@@ -167,14 +169,31 @@ Renaming also commits on Enter, cancels on Escape (`keyPressed` override checkin
 
 Every screen in `gui/` is drawn from primitives — no textures, no `.png`9-slices, nothing that could go missing or clash with a resource pack. `FatTheme` is the shared palette and drawing toolkit; `gui/widget/` holds the handful of `AbstractWidget` subclasses everything is built from.
 
-### Why `extractBackground` vs `extractRenderState`
+### Why everything is drawn *after* `super.render(...)`
 
-Minecraft 26.1's `Screen` splits rendering into two passes, and getting them backwards silently draws the card on top of its own buttons:
+On 1.21.1 a `Screen` renders in one pass, not two, and the ordering is the opposite of what the 26.1 code assumes:
 
-- **`extractBackground(...)`** runs once, before any widget renders. This is where the card, its header/footer bands, and the recessed "well" panels (preset row, keycap deck, allow-list) are painted — they need to be *behind* every widget.
-- **`extractRenderState(...)`** is where `Screen`'s own implementation iterates `renderables` and calls each widget's `extractWidgetRenderState`. Text labels that sit *between* widgets (section headers, the "SLOTS" accent label, the footer credit) are drawn by overriding this method, calling `super.extractRenderState()` in the middle so labels can be layered both under and over the widget pass as needed.
+- **`renderBackground(...)`** paints the card, its header/footer bands, and the recessed "well" panels (preset row, keycap deck, allow-list) — everything that belongs *behind* the widgets.
+- **`render(...)`** calls `renderBackground(...)` **first**, then iterates `renderables` and calls each widget's `renderWidget(...)`.
 
-This was confirmed against the actual bytecode of `Screen.extractRenderState()` and `Screen.extractBackground()` rather than assumed — `extractBackground` is a separate call Minecraft makes earlier in its own render sequence, not a step inside `extractRenderState`.
+Because the background is a *step inside* `render()` rather than an earlier separate call, anything drawn before `super.render(...)` gets painted over by the card immediately afterwards. So all of this mod's own chrome — section headers, the "SLOTS" accent label, the allow-list rows, the footer credit — is drawn *after* `super.render(...)` returns. Nothing it draws overlaps a widget, so layering it all on top is visually identical to the 26.1 version's before/after split.
+
+This is the single biggest structural difference between the two branches, and it is why the GUI layer can't be shared with a preprocessor.
+
+### Tooltips are queued on the screen, not drawn by the widget
+
+1.21.1 widgets have no "draw this later" hook of their own, and anything a widget paints during its own `renderWidget(...)` is covered by whatever renders after it. `FatTheme.tooltip(...)` therefore hands the lines to `Screen#setTooltipForNextRenderPass`, which draws them once every widget is done:
+
+```java
+public static void tooltip(List<Component> lines) {
+    Screen screen = Minecraft.getInstance().screen;
+    if (screen == null || lines.isEmpty()) return;
+    ...
+    screen.setTooltipForNextRenderPass(text);
+}
+```
+
+This is what makes the inventory-screen button's tooltip work: it renders on a *vanilla* `InventoryScreen`, which draws its own hovered-slot tooltip inside `render()`, and the deferred pass runs after that.
 
 ### Responsive layout, not fixed coordinates
 
@@ -192,7 +211,7 @@ Because iterating against a live Minecraft client is slow (asset downloads, JVM 
 `FatTheme.keycap()` draws a single key: a front "wall" (the side of the prism, in a deep shade) topped by a lit face, with the face's vertical position determined by whether the cap is *pressed*:
 
 ```java
-public static void keycap(GuiGraphicsExtractor g, int x, int y, int w, int capH, int depth,
+public static void keycap(GuiGraphics g, int x, int y, int w, int capH, int depth,
                           boolean pressed, Tone tone, boolean glow) {
     int baseline = y + capH + depth;
     int capTop = pressed ? y + depth - 1 : y;   // pressed caps sink toward baseline
@@ -228,22 +247,32 @@ Registered as a separate entrypoint in `fabric.mod.json`:
 
 Fabric Loader only instantiates entrypoint classes that a *present* mod actually asks for by entrypoint key — Mod Menu looks up the `"modmenu"` key and constructs `ModMenuIntegration` itself; if Mod Menu isn't installed, nothing ever asks for that key and the class is simply never loaded. This is why `com.terraformersmc:modmenu` can be a `compileOnly` Gradle dependency (needed so `ModMenuIntegration` compiles against the real `ModMenuApi`/`ConfigScreenFactory` interfaces) without being bundled into the jar or required at runtime — confirmed by inspecting the built jar, which contains `ModMenuIntegration.class` but no Mod Menu classes.
 
-Mod Menu **18.0.0** specifically, not a 15.x release — 15.x targets Minecraft 1.21.x; 18.0.0 is the first line built against 26.1.2, confirmed via Modrinth's version API before pinning it in `gradle.properties`.
+Mod Menu **11.0.4** specifically — the 11.x line is what targets Minecraft 1.21/1.21.1, confirmed via Modrinth's version API before pinning it in `gradle.properties`. (The `main` branch pins 18.0.0, the first line built against 26.1.2.)
 
 ## Build system
 
-Fabric Loom 1.17.12, targeting Minecraft **26.1.2** on **Java 25** (the toolchain Mojang ships for that Minecraft version — this is not a stylistic choice, `net.fabricmc:fabric-loader:0.19.3` and the 26.1.2 mappings require it). `build.gradle` pins the compiler to `--release 25` explicitly rather than relying on `sourceCompatibility` alone, since Loom's remapping step is sensitive to bytecode version mismatches.
+Fabric Loom **1.7.4** on Gradle **8.10**, targeting Minecraft **1.21.1** on **Java 21** (the toolchain Mojang ships for that Minecraft version). `build.gradle` pins the compiler to `--release 21` explicitly rather than relying on `sourceCompatibility` alone, since Loom's remapping step is sensitive to bytecode version mismatches.
 
 ```properties
-minecraft_version=26.1.2
-loader_version=0.19.3
-fabric_version=0.154.0+26.1.2
-modmenu_version=18.0.0
+minecraft_version=1.21.1
+loader_version=0.16.14
+fabric_version=0.116.15+1.21.1
+modmenu_version=11.0.4
 ```
 
-`org.gradle.java.installations.paths` in `gradle.properties` points Gradle's toolchain resolver at a local JDK 25 install rather than relying on auto-detection or a download, since JDK 25 is new enough that some Gradle versions won't auto-provision it.
+### Why the toolchain differs so much from `main`
 
-One build-config detail worth flagging for anyone porting this pattern to another MC version: `modCompileOnly` (Loom's remapping-aware compile-only configuration) **does not exist** in this Loom/MC version combination — mods for Minecraft 1.26+ ship with Mojang's official mappings directly (no separate "intermediary" remapping step for the mod's own compiled classes), so a plain Gradle `compileOnly` is correct and sufficient for the Mod Menu dependency. Using `modCompileOnly` here fails at configuration time with `Could not find method modCompileOnly()`.
+Three build-config details are inverted relative to the 26.1 branch, all for the same underlying reason — **1.21.1 is an obfuscated Minecraft release, and 26.1+ is not**:
+
+1. **`mappings loom.officialMojangMappings()` is required.** On 26.1 Mojang ships deobfuscated jars, so `main` has no `mappings` line at all. Here, omitting it fails outright. The mod is written against official (Mojang) names, not Yarn, so this is the mapping set that keeps the source readable.
+
+2. **The Loom plugin id is `fabric-loom`, not `net.fabricmc.fabric-loom`.** The namespaced id only exists on much newer Loom releases; asking for `net.fabricmc.fabric-loom` at 1.7.4 fails with `Plugin ... was not found`.
+
+3. **`modCompileOnly` / `modImplementation` are required.** `main`'s note that "`modCompileOnly` does not exist in this Loom/MC version combination" is true *there* and false here: because 1.21.1 mods are remapped through intermediary, Mod Menu and Fabric API must go through Loom's remapping-aware configurations. Plain `compileOnly`/`implementation` would compile against unremapped names.
+
+Newer Loom versions reject this setup explicitly — Loom 1.17.12 fails at configuration time with `Cannot use Mojang mappings in a non-obfuscated environment`, since it assumes the post-26.1 world. That error is the clearest signal that the two branches genuinely need different Loom lines.
+
+`org.gradle.java.installations.paths` is commented out in `gradle.properties`; JDK 21 is old enough that Gradle's toolchain auto-detection (or the foojay resolver in `settings.gradle`) handles it. Uncomment and point it at a local JDK 21 if your machine needs the hint.
 
 ```bash
 ./gradlew build          # -> build/libs/fatfingert-<version>.jar
@@ -298,11 +327,11 @@ Config lives at `config/fatfingert.json` and is safe to hand-edit — slot keys 
 ## Known limits (by design)
 
 - **Strict shift-click over-blocks in ambiguous cases.** The mod doesn't have access to vanilla's actual shift-click destination algorithm, so it approximates: if *any* guarded hotbar slot is empty and wouldn't accept the shifted item, the shift-click is blocked, even in cases where vanilla would have actually routed the item somewhere else entirely. This trades some false positives for the guarantee that a guarded slot can never be silently filled by a shift-click the player didn't intend.
-- **Creative-mode inventory is untouched.** The click-interception mixin targets `MultiPlayerGameMode.handleContainerInput`, which creative's own screen doesn't route through the same way.
+- **Creative-mode inventory is untouched.** The click-interception mixin targets `MultiPlayerGameMode.handleInventoryMouseClick`, which creative's own screen doesn't route through the same way.
 - **It never moves items for you.** A guarded offhand doesn't equip a totem into it — it only stops something *else* from ending up there instead. All the mod ever does is veto.
 
 ## Extending it
 
 - **New guardable slots:** would require widening `VALID_SLOT_KEYS`, `slotKeyForPlayerIndex()`, and the `SLOT_ORDER` array in `FatfingertConfigScreen` — armor slots aren't currently modeled since they don't have the same "wrong item lands here mid-fight" failure mode hotbar/offhand do.
 - **New per-preset behaviors:** add a field to `FatfingertConfig.Preset`, a check in the relevant mixin or in `Fatfingert.clickBlockReason()`, and a `ToggleChip` in `FatfingertConfigScreen.rebuildWidgets()` — the existing `blockEmptying`/`strictShiftClick` pair is the template.
-- **New widgets:** subclass `AbstractWidget`, implement `extractWidgetRenderState` using `FatTheme`'s primitives (`panel`, `panelGradient`, `roundRect`, `outlineGlow`, `scrollbar`) rather than introducing new drawing conventions, so new UI stays visually consistent with the rest of the mod without needing new textures.
+- **New widgets:** subclass `AbstractWidget`, implement `renderWidget` using `FatTheme`'s primitives (`panel`, `panelGradient`, `roundRect`, `outlineGlow`, `scrollbar`) rather than introducing new drawing conventions, so new UI stays visually consistent with the rest of the mod without needing new textures.

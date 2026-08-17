@@ -1,6 +1,13 @@
 package dev.fatfingert.gui;
 
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
+import net.minecraft.util.FormattedCharSequence;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * The Fatfingert look: palette, rounded panels, and the keycap primitive that
@@ -72,10 +79,31 @@ public final class FatTheme {
         return mix(argb, 0xFF000000, amount);
     }
 
+    // ---- tooltips ----------------------------------------------------
+
+    /**
+     * Queues a multi-line tooltip on the current screen.
+     *
+     * 1.21.1 widgets have no "draw this later" hook of their own, so anything a
+     * widget paints during its own render pass gets covered by whatever renders
+     * after it. Handing the lines to the screen instead makes it draw them once
+     * every widget is done, which is where a tooltip belongs.
+     */
+    public static void tooltip(List<Component> lines) {
+        Screen screen = Minecraft.getInstance().screen;
+        if (screen == null || lines.isEmpty()) return;
+
+        List<FormattedCharSequence> text = new ArrayList<>(lines.size());
+        for (Component line : lines) {
+            text.add(line.getVisualOrderText());
+        }
+        screen.setTooltipForNextRenderPass(text);
+    }
+
     // ---- primitives --------------------------------------------------
 
     /** Solid rect with 1px clipped corners, which reads as a subtle radius. */
-    public static void roundRect(GuiGraphicsExtractor g, int x, int y, int w, int h, int color) {
+    public static void roundRect(GuiGraphics g, int x, int y, int w, int h, int color) {
         if (w <= 0 || h <= 0) return;
         if (w <= 2 || h <= 2) {
             g.fill(x, y, x + w, y + h, color);
@@ -86,7 +114,7 @@ public final class FatTheme {
     }
 
     /** Vertical gradient with the same 1px-clipped corners as {@link #roundRect}. */
-    public static void roundGradient(GuiGraphicsExtractor g, int x, int y, int w, int h, int top, int bottom) {
+    public static void roundGradient(GuiGraphics g, int x, int y, int w, int h, int top, int bottom) {
         if (w <= 0 || h <= 0) return;
         if (w <= 2 || h <= 2) {
             g.fillGradient(x, y, x + w, y + h, top, bottom);
@@ -97,33 +125,33 @@ public final class FatTheme {
     }
 
     /** 1px border in {@code border}, interior filled with {@code fill}. */
-    public static void panel(GuiGraphicsExtractor g, int x, int y, int w, int h, int fill, int border) {
+    public static void panel(GuiGraphics g, int x, int y, int w, int h, int fill, int border) {
         roundRect(g, x, y, w, h, border);
         roundRect(g, x + 1, y + 1, w - 2, h - 2, fill);
     }
 
     /** Bordered panel whose interior is a vertical gradient. */
-    public static void panelGradient(GuiGraphicsExtractor g, int x, int y, int w, int h,
+    public static void panelGradient(GuiGraphics g, int x, int y, int w, int h,
                                      int top, int bottom, int border) {
         roundRect(g, x, y, w, h, border);
         roundGradient(g, x + 1, y + 1, w - 2, h - 2, top, bottom);
     }
 
     /** Hairline used to separate header/footer bands. */
-    public static void divider(GuiGraphicsExtractor g, int x, int y, int w) {
+    public static void divider(GuiGraphics g, int x, int y, int w) {
         g.fill(x, y, x + w, y + 1, BORDER_SOFT);
         g.fill(x, y + 1, x + w, y + 2, 0x14FFFFFF);
     }
 
     /** A short accent bar, used to badge section headings. */
-    public static void accentBar(GuiGraphicsExtractor g, int x, int y, int h, int color) {
+    public static void accentBar(GuiGraphics g, int x, int y, int h, int color) {
         roundRect(g, x, y, 2, h, color);
     }
 
     /**
      * Vertical scrollbar track + thumb. Draws nothing when everything fits.
      */
-    public static void scrollbar(GuiGraphicsExtractor g, int x, int y, int h,
+    public static void scrollbar(GuiGraphics g, int x, int y, int h,
                                  int total, int visible, int offset) {
         if (total <= visible || h <= 0) return;
         roundRect(g, x, y, 3, h, CARD_SUNK);
@@ -165,7 +193,7 @@ public final class FatTheme {
      * @param w,capH  size of the cap's top face
      * @param depth   how tall the front wall is when unpressed
      */
-    public static void keycap(GuiGraphicsExtractor g, int x, int y, int w, int capH, int depth,
+    public static void keycap(GuiGraphics g, int x, int y, int w, int capH, int depth,
                               boolean pressed, Tone tone, boolean glow) {
         int baseline = y + capH + depth;
         int capTop = pressed ? y + depth - 1 : y;
@@ -200,14 +228,14 @@ public final class FatTheme {
      * A 8x8 magnifier glyph drawn from fills, so it can't turn into a
      * missing-glyph box the way an exotic unicode character might.
      */
-    public static void magnifier(GuiGraphicsExtractor g, int x, int y, int color, int hollow) {
+    public static void magnifier(GuiGraphics g, int x, int y, int color, int hollow) {
         roundRect(g, x, y, 6, 6, color);
         roundRect(g, x + 1, y + 1, 4, 4, hollow);
         g.fill(x + 5, y + 5, x + 7, y + 7, color);
     }
 
     /** 1px outline drawn just outside a rect, used for focus/selection rings. */
-    public static void outlineGlow(GuiGraphicsExtractor g, int x, int y, int w, int h, int color) {
+    public static void outlineGlow(GuiGraphics g, int x, int y, int w, int h, int color) {
         g.fill(x + 1, y, x + w - 1, y + 1, color);
         g.fill(x + 1, y + h - 1, x + w - 1, y + h, color);
         g.fill(x, y + 1, x + 1, y + h - 1, color);
@@ -219,7 +247,7 @@ public final class FatTheme {
      * green (the input you wanted), the right stands tall and red (the one that
      * got blocked).
      */
-    public static void logoMark(GuiGraphicsExtractor g, int x, int y, int capW, int capH, int depth) {
+    public static void logoMark(GuiGraphics g, int x, int y, int capW, int capH, int depth) {
         int gap = Math.max(2, capW / 6);
         keycap(g, x, y, capW, capH, depth, true, Tone.GREEN, false);
         keycap(g, x + capW + gap, y, capW, capH, depth, false, Tone.RED, false);

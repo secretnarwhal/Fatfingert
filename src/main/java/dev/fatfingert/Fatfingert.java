@@ -4,11 +4,11 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -89,7 +89,7 @@ public final class Fatfingert {
     }
 
     public static String normalizeId(String id) {
-        Identifier parsed = Identifier.tryParse(id.trim().toLowerCase());
+        ResourceLocation parsed = ResourceLocation.tryParse(id.trim().toLowerCase());
         return parsed == null ? null : parsed.toString();
     }
 
@@ -101,7 +101,7 @@ public final class Fatfingert {
     }
 
     public static String handSwapBlockReason(Player player) {
-        String mainKey = "hotbar" + player.getInventory().getSelectedSlot();
+        String mainKey = "hotbar" + player.getInventory().selected;
         ItemStack main = player.getMainHandItem();
         ItemStack off = player.getOffhandItem();
 
@@ -116,14 +116,14 @@ public final class Fatfingert {
 
     public static String dropBlockReason(Player player) {
         if (!activePreset().blockEmptying) return null;
-        String mainKey = "hotbar" + player.getInventory().getSelectedSlot();
+        String mainKey = "hotbar" + player.getInventory().selected;
         if (hasRule(mainKey) && !player.getMainHandItem().isEmpty()) {
             return lockedMessage(mainKey);
         }
         return null;
     }
 
-    public static String clickBlockReason(Player player, int slotId, int button, ContainerInput actionType) {
+    public static String clickBlockReason(Player player, int slotId, int button, ClickType actionType) {
         AbstractContainerMenu menu = player.containerMenu;
         if (menu == null) return null;
 
@@ -239,9 +239,9 @@ public final class Fatfingert {
 
     /** Display name for an item id, falling back to the raw id if unknown. */
     public static String itemName(String id) {
-        Identifier loc = Identifier.tryParse(id);
+        ResourceLocation loc = ResourceLocation.tryParse(id);
         if (loc != null && BuiltInRegistries.ITEM.containsKey(loc)) {
-            Item item = BuiltInRegistries.ITEM.getValue(loc);
+            Item item = BuiltInRegistries.ITEM.get(loc);
             return item.getName(item.getDefaultInstance()).getString();
         }
         return id;
@@ -249,9 +249,9 @@ public final class Fatfingert {
 
     /** An ItemStack for an item id, or EMPTY when the id is unknown. */
     public static ItemStack stackFor(String id) {
-        Identifier loc = Identifier.tryParse(id);
+        ResourceLocation loc = ResourceLocation.tryParse(id);
         if (loc != null && BuiltInRegistries.ITEM.containsKey(loc)) {
-            return new ItemStack(BuiltInRegistries.ITEM.getValue(loc));
+            return new ItemStack(BuiltInRegistries.ITEM.get(loc));
         }
         return ItemStack.EMPTY;
     }
@@ -279,8 +279,8 @@ public final class Fatfingert {
         lastMessageMs = now;
 
         if (Minecraft.getInstance().player != null) {
-            Minecraft.getInstance().player.sendOverlayMessage(
-                    Component.literal(reason).withStyle(ChatFormatting.RED));
+            Minecraft.getInstance().player.displayClientMessage(
+                    Component.literal(reason).withStyle(ChatFormatting.RED), true);
         }
     }
 }

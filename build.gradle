@@ -1,5 +1,7 @@
 plugins {
-    id 'net.fabricmc.fabric-loom' version '1.17.12'
+    // Loom 1.7.x is contemporary with 1.21.1 and still speaks the classic plugin
+    // id; the net.fabricmc.* id only exists on much newer releases.
+    id 'fabric-loom' version '1.7.4'
     id 'java'
 }
 
@@ -21,13 +23,19 @@ repositories {
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
 
-    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
-    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+    // 1.21.1 is still an obfuscated release, so the mapping set has to be
+    // requested explicitly - unlike 26.1+, where Mojang ships deobfuscated jars
+    // and Loom needs no mappings line at all. The mod is written against
+    // official (Mojang) names, not Yarn.
+    mappings loom.officialMojangMappings()
+
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
     // Mod Menu is an optional integration: we compile against it so the
     // settings panel can be opened from Mod Menu, but it is never bundled
     // and the mod runs fine without it installed.
-    compileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
+    modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
 }
 
 processResources {
@@ -39,12 +47,12 @@ processResources {
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(25)
+        languageVersion = JavaLanguageVersion.of(21)
     }
-    sourceCompatibility = JavaVersion.VERSION_25
-    targetCompatibility = JavaVersion.VERSION_25
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
 }
 
 tasks.withType(JavaCompile).configureEach {
-    it.options.release = 25
+    it.options.release = 21
 }

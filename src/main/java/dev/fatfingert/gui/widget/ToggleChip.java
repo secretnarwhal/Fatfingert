@@ -3,14 +3,12 @@ package dev.fatfingert.gui.widget;
 import dev.fatfingert.gui.FatTheme;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
-import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.function.BooleanSupplier;
 
 /**
@@ -37,7 +35,7 @@ public class ToggleChip extends AbstractWidget {
     }
 
     @Override
-    protected void extractWidgetRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float delta) {
+    protected void renderWidget(GuiGraphics g, int mouseX, int mouseY, float delta) {
         Font font = Minecraft.getInstance().font;
         boolean on = state.getAsBoolean();
         boolean hot = isHoveredOrFocused();
@@ -56,7 +54,7 @@ public class ToggleChip extends AbstractWidget {
         }
 
         int textY = y + (h - font.lineHeight) / 2 + 1;
-        g.text(font, getMessage(), x + 7, textY, on ? FatTheme.TEXT : FatTheme.TEXT_DIM, false);
+        g.drawString(font, getMessage(), x + 7, textY, on ? FatTheme.TEXT : FatTheme.TEXT_DIM, false);
 
         // Pill
         int pillX = x + w - PILL_W - 5;
@@ -71,12 +69,12 @@ public class ToggleChip extends AbstractWidget {
                 on ? accent : FatTheme.SLATE);
 
         if (hot && description != null) {
-            g.setTooltipForNextFrame(font, List.of(getMessage(), description), Optional.empty(), mouseX, mouseY);
+            FatTheme.tooltip(List.of(getMessage(), description));
         }
     }
 
     @Override
-    public void onClick(MouseButtonEvent event, boolean doubleClick) {
+    public void onClick(double mouseX, double mouseY) {
         onToggle.run();
     }
 

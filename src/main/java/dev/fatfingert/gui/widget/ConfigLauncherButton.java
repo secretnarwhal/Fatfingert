@@ -3,15 +3,12 @@ package dev.fatfingert.gui.widget;
 import dev.fatfingert.Fatfingert;
 import dev.fatfingert.gui.FatTheme;
 import net.minecraft.ChatFormatting;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
-import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 
 import java.util.List;
-import java.util.Optional;
 
 /**
  * The little button tucked into the inventory screen that opens Fatfingert.
@@ -28,7 +25,7 @@ public class ConfigLauncherButton extends AbstractWidget {
     }
 
     @Override
-    protected void extractWidgetRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float delta) {
+    protected void renderWidget(GuiGraphics g, int mouseX, int mouseY, float delta) {
         boolean hot = isHoveredOrFocused();
         int x = getX();
         int y = getY();
@@ -43,20 +40,18 @@ public class ConfigLauncherButton extends AbstractWidget {
 
         if (hot) {
             boolean on = Fatfingert.isEnabled();
-            g.setTooltipForNextFrame(Minecraft.getInstance().font,
-                    List.of(
-                            Component.literal("Fatfingert").withStyle(ChatFormatting.WHITE),
-                            Component.literal(on
-                                    ? Fatfingert.guardedSlotCount() + " slot(s) guarded"
-                                    : "Currently off")
-                                    .withStyle(on ? ChatFormatting.GREEN : ChatFormatting.RED)
-                    ),
-                    Optional.empty(), mouseX, mouseY);
+            FatTheme.tooltip(List.of(
+                    Component.literal("Fatfingert").withStyle(ChatFormatting.WHITE),
+                    Component.literal(on
+                            ? Fatfingert.guardedSlotCount() + " slot(s) guarded"
+                            : "Currently off")
+                            .withStyle(on ? ChatFormatting.GREEN : ChatFormatting.RED)
+            ));
         }
     }
 
     @Override
-    public void onClick(MouseButtonEvent event, boolean doubleClick) {
+    public void onClick(double mouseX, double mouseY) {
         onPress.run();
     }
 
