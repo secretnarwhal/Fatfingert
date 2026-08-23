@@ -2,7 +2,7 @@
 
 **Misinput insurance for your hotbar.**
 
-A client-side Fabric mod for **Minecraft 26.1.2** that reserves inventory slots (offhand and hotbar) for specific items, so a fat-fingered key press or click can't wreck your loadout mid-fight.
+A client-side Fabric mod for **Minecraft 26.2** that reserves inventory slots (offhand and hotbar) for specific items, so a fat-fingered key press or click can't wreck your loadout mid-fight.
 
 It contains **zero automation**. Every mixin in this mod only ever *cancels* an input the player already generated, like a key press, a click, before it ever turns into a packet. Nothing here presses keys, moves items, or talks to the server on the player's behalf, so it does not function as a cheat and should not trip anticheat that watches for injected inputs.
 
@@ -228,17 +228,17 @@ Registered as a separate entrypoint in `fabric.mod.json`:
 
 Fabric Loader only instantiates entrypoint classes that a *present* mod actually asks for by entrypoint key — Mod Menu looks up the `"modmenu"` key and constructs `ModMenuIntegration` itself; if Mod Menu isn't installed, nothing ever asks for that key and the class is simply never loaded. This is why `com.terraformersmc:modmenu` can be a `compileOnly` Gradle dependency (needed so `ModMenuIntegration` compiles against the real `ModMenuApi`/`ConfigScreenFactory` interfaces) without being bundled into the jar or required at runtime — confirmed by inspecting the built jar, which contains `ModMenuIntegration.class` but no Mod Menu classes.
 
-Mod Menu **18.0.0** specifically, not a 15.x release — 15.x targets Minecraft 1.21.x; 18.0.0 is the first line built against 26.1.2, confirmed via Modrinth's version API before pinning it in `gradle.properties`.
+Mod Menu **20.0.1** specifically — the Mod Menu line tracks Minecraft closely, and 20.0.x is the line built against 26.2 (18.0.0 was the 26.1.x line; 19.0.0-alpha.1 only ever targeted a 26.2 snapshot and never got a stable release). Confirmed via Modrinth's version API before pinning it in `gradle.properties`.
 
 ## Build system
 
-Fabric Loom 1.17.12, targeting Minecraft **26.1.2** on **Java 25** (the toolchain Mojang ships for that Minecraft version — this is not a stylistic choice, `net.fabricmc:fabric-loader:0.19.3` and the 26.1.2 mappings require it). `build.gradle` pins the compiler to `--release 25` explicitly rather than relying on `sourceCompatibility` alone, since Loom's remapping step is sensitive to bytecode version mismatches.
+Fabric Loom 1.17.12, targeting Minecraft **26.2** on **Java 25** (the toolchain Mojang ships for that Minecraft version — this is not a stylistic choice, `net.fabricmc:fabric-loader:0.19.3` and the 26.2 mappings require it). `build.gradle` pins the compiler to `--release 25` explicitly rather than relying on `sourceCompatibility` alone, since Loom's remapping step is sensitive to bytecode version mismatches.
 
 ```properties
-minecraft_version=26.1.2
+minecraft_version=26.2
 loader_version=0.19.3
-fabric_version=0.154.0+26.1.2
-modmenu_version=18.0.0
+fabric_version=0.158.0+26.2
+modmenu_version=20.0.1
 ```
 
 `org.gradle.java.installations.paths` in `gradle.properties` points Gradle's toolchain resolver at a local JDK 25 install rather than relying on auto-detection or a download, since JDK 25 is new enough that some Gradle versions won't auto-provision it.
@@ -248,6 +248,19 @@ One build-config detail worth flagging for anyone porting this pattern to anothe
 ```bash
 ./gradlew build          # -> build/libs/fatfingert-<version>.jar
 ```
+
+### Porting 26.1.2 → 26.2
+
+Exactly one API change touched this mod: **screen management moved off `Minecraft` and onto `Minecraft.gui`.**
+
+| 26.1.2 | 26.2 |
+|---|---|
+| `minecraft.setScreen(screen)` | `minecraft.gui.setScreen(screen)` |
+| `minecraft.screen` (field) | `minecraft.gui.screen()` (accessor) |
+
+`Minecraft` does still expose a `setScreenAndShow(Screen)`, and it is *not* the drop-in replacement — its bytecode is `gui.setScreen(screen)` followed by `renderFrame(false)`, i.e. it forces an immediate extra frame. That is what vanilla wants for loading and progress screens, not for opening a config panel. The plain swap is `gui.setScreen`, which is what vanilla's own `Screen.onClose()` now calls (`minecraft.gui.setScreen(null)`).
+
+Nothing else moved. All three mixin targets still resolve unchanged against the 26.2 jar — `Minecraft.handleKeybinds()`, `MultiPlayerGameMode.handleContainerInput(int, int, int, ContainerInput, Player)`, and `InventoryScreen.init()` — and the 26.1 `extractBackground` / `extractRenderState` render split described above is intact, so the entire UI layer carried over untouched.
 
 ## Project layout
 

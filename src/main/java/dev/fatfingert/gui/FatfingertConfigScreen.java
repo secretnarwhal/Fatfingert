@@ -210,7 +210,7 @@ public class FatfingertConfigScreen extends Screen {
             addRenderableWidget(new FatButton(
                     innerX + innerW - 76, detailHeaderY - 2, 76, 16,
                     Component.literal("+ Add Item"), FatButton.Style.PRIMARY,
-                    () -> Minecraft.getInstance().setScreen(new ItemPickerScreen(this, selectedSlot))
+                    () -> Minecraft.getInstance().gui.setScreen(new ItemPickerScreen(this, selectedSlot))
             ));
 
             List<String> rule = Fatfingert.ruleFor(selectedSlot);
@@ -606,6 +606,6 @@ public class FatfingertConfigScreen extends Screen {
     @Override
     public void onClose() {
         commitRename();
-        this.minecraft.setScreen(parent);
+        this.minecraft.gui.setScreen(parent);
     }
 }

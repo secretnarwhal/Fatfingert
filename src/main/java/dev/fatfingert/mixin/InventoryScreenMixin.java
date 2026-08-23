@@ -29,7 +29,7 @@ public abstract class InventoryScreenMixin extends AbstractContainerScreen<Inven
 
         this.addRenderableWidget(new ConfigLauncherButton(x, y, () -> {
             Minecraft mc = Minecraft.getInstance();
-            mc.setScreen(new FatfingertConfigScreen(mc.screen));
+            mc.gui.setScreen(new FatfingertConfigScreen(mc.gui.screen()));
         }));
     }
 }
