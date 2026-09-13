@@ -85,8 +85,11 @@ public class FatButton extends AbstractWidget {
             }
         }
 
+        // The drop shadow is a darkened copy of the text colour, so under the dark
+        // text on a filled button it just reads as doubled text. Draw that one flat.
         int textY = y + (h - font.lineHeight) / 2 + 1;
-        g.centeredText(font, getMessage(), x + w / 2, textY, textColor);
+        int textX = x + (w - font.width(getMessage())) / 2;
+        g.text(font, getMessage(), textX, textY, textColor, style != Style.PRIMARY);
 
         if (hot && hint != null) {
             g.setTooltipForNextFrame(font, hint, Optional.empty(), mouseX, mouseY);

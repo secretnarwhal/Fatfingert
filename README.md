@@ -19,6 +19,7 @@ Made by **AlmondsMilk**.
 - [Preset management](#preset-management)
 - [The UI layer](#the-ui-layer)
 - [The keycap rendering primitive](#the-keycap-rendering-primitive)
+- [Hotkeys](#hotkeys)
 - [Mod Menu integration](#mod-menu-integration)
 - [Build system](#build-system)
 - [Project layout](#project-layout)
@@ -56,19 +57,21 @@ Slot keys are `"offhand"` and `"hotbar0"` through `"hotbar8"` (`hotbar0` is the 
 Only one preset is active at a time (`FatfingertConfig.activePreset`), and every rule lookup goes through `Fatfingert.activePreset()`, which falls back to an empty `Preset` if the active key somehow doesn't resolve — so a corrupt or mid-edit config degrades to "nothing is guarded" rather than throwing.
 
 ```java
-public static boolean isAllowed(String slotKey, ItemStack incoming) {
+public static boolean isAllowed(String slotKey, ItemStack current, ItemStack incoming) {
     List<String> rule = ruleFor(slotKey);
     if (rule == null) return true;                        // unguarded
-    if (incoming.isEmpty()) return !activePreset().blockEmptying;
-    return rule.contains(itemId(incoming));
+    if (!incoming.isEmpty()) return rule.contains(itemId(incoming));
+    return !isLocked(slotKey, current);                   // emptying the slot
 }
 ```
 
+The gate is about what goes **in**. A disallowed item arriving is always refused; anything *leaving* a slot — including a wrong item that ended up there somehow — is let through, with the single exception of Lock Contents below.
+
 Item identity is the registry id string (`"minecraft:totem_of_undying"`), not the `Item` reference, so rules survive across game restarts and are hand-editable in the JSON.
 
-### `blockEmptying`
+### `blockEmptying` (Lock Contents)
 
-Per-preset, off by default. When on, a guarded slot also can't be *emptied* — no dropping, no swapping the item out, no shift-clicking it away — unless the replacement is itself an allowed item. This is a second, independent gate; `isAllowed()` handles "can this item enter", while `dropBlockReason()` and the `THROW`/`QUICK_MOVE` branches of `clickBlockReason()` handle "can this slot be emptied".
+Per-preset, off by default. When on, an *allowed* item can't be taken back out of its guarded slot — no dropping, no swapping it out, no shift-clicking or double-click-gathering it away — unless the replacement is itself an allowed item. `isLocked()` only ever returns true when the slot holds something its rule allows, so a wrong item can always be removed, lock or no lock. `dropBlockReason()` and the `THROW` / `QUICK_MOVE` / `PICKUP_ALL` branches of `clickBlockReason()` all go through it.
 
 ## Where the guarding actually happens
 
@@ -82,11 +85,23 @@ Runs once a client tick, before vanilla consumes any queued key clicks. It **pee
 
 The single funnel for every inventory-screen interaction: clicks, shift-clicks (`QUICK_MOVE`), number-key hotbar swaps (`SWAP`), drag-splitting (`QUICK_CRAFT`), F-swap while hovering a slot, and throws (`THROW`/`PICKUP_ALL` variants). `Fatfingert.clickBlockReason()` switches on the vanilla `ContainerInput` action type and inspects whichever slots that action touches; if it returns non-null, `ci.cancel()` stops vanilla from ever sending the packet.
 
-This is also where **strict shift-click** lives. Vanilla's own shift-click destination logic is not exposed to mixins in a reusable form, so rather than re-implementing Minecraft's slot-fill algorithm, strict mode approximates it: if the source item isn't already known to be disallowed via its slot, but *some* guarded hotbar slot is both empty and doesn't allow it, the shift-click is blocked on the assumption vanilla might route the item there. This deliberately over-blocks in ambiguous cases — see [Known limits](#known-limits-by-design).
+This is also where **strict shift-click** lives. A shift-click's destination is decided by the open menu's `quickMoveStack`, so `shiftClickBlockReason()` follows the same route without touching anything: it picks the range of player slots the menu would try (read off the 26.2 bytecode for `InventoryMenu` and the chest-like menus), then replays `moveItemStackTo` over it — top up matching stacks in order, then drop the rest into the first empty slot — and blocks only if that lands inside a guarded slot that doesn't accept the item.
+
+| Shift-click from | Where the item can land in a guarded slot |
+|---|---|
+| Own inventory, main or hotbar | the offhand, if the item auto-equips there and it's empty |
+| Own inventory, main | then the hotbar, left to right |
+| Own inventory, armor / crafting grid / offhand | the hotbar, only once the main inventory is full |
+| Own inventory, crafting output | any hotbar slot with room (shift-crafting repeats) |
+| Chest, shulker box, hopper, dispenser, crafter | the hotbar, right to left, before the main inventory |
+| Player slots while one of those is open | nowhere — it goes into the container |
+| Other menus (furnace, crafting table, …) | main → the hotbar fallback; container → any hotbar slot with room |
+
+Shifting items *out* — off the hotbar, or into a chest — is never blocked. Menus whose routing isn't modeled fall back to the conservative check. See [Known limits](#known-limits-by-design).
 
 ### `InventoryScreenMixin` → `InventoryScreen.init()` (`@At("TAIL")`)
 
-Purely cosmetic. Adds the `ConfigLauncherButton` (the button drawn as the logo mark) to the vanilla inventory screen next to the recipe book button. No gameplay logic here at all.
+Purely cosmetic. Adds the `ConfigLauncherButton` (the button drawn as the logo mark) to the vanilla inventory screen next to the recipe book button, unless `showInventoryButton` is off. `init()` runs again whenever the inventory screen comes back from the Fatfingert panel, so toggling it there takes effect immediately. No gameplay logic here at all.
 
 All three mixins check `Fatfingert.isEnabled()` first and bail immediately if the master switch is off, so disabling the mod at runtime doesn't require restarting or reloading mixins — the injected code becomes a no-op.
 
@@ -99,6 +114,7 @@ All three mixins check `Fatfingert.isEnabled()` first and bail immediately if th
   "enabled": true,
   "showMessages": true,
   "strictShiftClick": true,
+  "showInventoryButton": true,
   "activePreset": "crystal_pvp",
   "seededDefaults": true,
   "presets": {
@@ -185,7 +201,7 @@ This was confirmed against the actual bytecode of `Screen.extractRenderState()` 
 
 ### Offline layout verification
 
-Because iterating against a live Minecraft client is slow (asset downloads, JVM startup, manual navigation to the screen), the layout math and `FatTheme` drawing primitives were mirrored 1:1 into a standalone `java.awt.Graphics2D` harness during development, rendering the screens to PNG at several logical resolutions (640×360, 960×540, 320×240) without touching Minecraft at all. This caught real layout bugs — the keycap row exceeding the card width at minimum GUI scale, the header subtitle running under the Armed toggle, a footer hint overflowing the item picker — before ever launching the game. It's not part of the mod or the build; it was a throwaway development tool, not checked into this repo.
+Because iterating against a live Minecraft client is slow (asset downloads, JVM startup, manual navigation to the screen), the layout math and `FatTheme` drawing primitives were mirrored 1:1 into a standalone `java.awt.Graphics2D` harness during development, rendering the screens to PNG at several logical resolutions (640×360, 960×540, 320×240) without touching Minecraft at all. This caught real layout bugs — the keycap row exceeding the card width at minimum GUI scale, the header subtitle running under the master switch, a footer hint overflowing the item picker — before ever launching the game. It's not part of the mod or the build; it was a throwaway development tool, not checked into this repo.
 
 ## The keycap rendering primitive
 
@@ -205,6 +221,25 @@ A pressed cap and an unpressed cap occupy the *same footprint* (`w` × `capH + d
 Three tones (`GREEN`/`RED`/`SLATE`), each a `(light, mid, deep)` triple used for the face gradient and wall shading. The logo mark (`FatTheme.logoMark()`) is simply two adjacent `keycap()` calls — one pressed+green, one unpressed+red — and every use of the mark in the mod (the header, the footer credit, the inventory-screen launcher button, the standalone `icon.png`) is that same function at a different scale, not a separate asset.
 
 `icon.png` itself is generated, not hand-drawn — a throwaway `java.awt.Graphics2D` script (`LogoGen.java`, not part of the build) renders the same two-keycap composition at 128×128 with a rounded backing plate, using the identical geometry ratios as the in-game primitive so the packaging icon and the in-game logo are visibly the same mark rather than two independent illustrations.
+
+## Hotkeys
+
+`FatfingertKeys` registers one vanilla `KeyMapping` per control that means something outside the panel, all unbound by default, in their own **Fatfingert** category (`KeyMapping.Category.register(fatfingert:main)`):
+
+| Key id | Does |
+|---|---|
+| `key.fatfingert.toggle` | master switch on/off (kept from earlier versions, so an existing binding survives) |
+| `key.fatfingert.open_menu` | open the Fatfingert panel |
+| `key.fatfingert.toggle_inventory_button` | show/hide the inventory-screen button |
+| `key.fatfingert.toggle_lock_contents` | Lock Contents for the active preset |
+| `key.fatfingert.toggle_strict_shift` | Strict Shift |
+| `key.fatfingert.next_preset` / `previous_preset` | cycle presets |
+
+Because they're ordinary key mappings they save to `options.txt`, show up under *Options → Controls*, and — like every vanilla hotkey — only fire in-game, not while a screen is open. A single `END_CLIENT_TICK` listener drains each one's `consumeClick()` queue and runs its action, which flashes the new state on the action bar.
+
+The panel's own **Keybinds** screen (`KeybindsScreen`) edits the same mappings the way vanilla's controls screen does: `setKey()` + `KeyMapping.resetMapping()`, and `options.save()` in `removed()`. While it's waiting for a key, Escape unbinds, middle/side mouse buttons bind, and left/right click cancel instead — a toggle bound to a swing or use would fire constantly. A key that another mapping also uses is drawn red, with the clash listed in its tooltip.
+
+Hotkeys that aren't here — rename, add/delete preset, the slot keycaps, Add Item — only make sense with the panel already open.
 
 ## Mod Menu integration
 
@@ -268,7 +303,8 @@ Nothing else moved. All three mixin targets still resolve unchanged against the 
 src/main/java/dev/fatfingert/
 ├── Fatfingert.java              # rule evaluation — the only "is this allowed" logic
 ├── FatfingertConfig.java        # config schema, load/save, preset CRUD
-├── FatfingertClient.java        # client entrypoint, registers the toggle keybind
+├── FatfingertClient.java        # client entrypoint: loads config, registers hotkeys
+├── FatfingertKeys.java          # hotkey registry + tick handler
 ├── compat/
 │   └── ModMenuIntegration.java  # Mod Menu entrypoint (compileOnly dependency)
 ├── mixin/
@@ -279,10 +315,12 @@ src/main/java/dev/fatfingert/
     ├── FatTheme.java                # palette + drawing primitives + keycap renderer
     ├── FatfingertConfigScreen.java  # main panel: presets, toggles, slot row, allow-list
     ├── ItemPickerScreen.java        # searchable item grid for adding rules
+    ├── KeybindsScreen.java          # lists and rebinds the hotkeys
     └── widget/
         ├── FatButton.java           # bordered button, 4 visual styles
         ├── ToggleChip.java          # labelled row + sliding on/off pill
         ├── KeycapButton.java        # one slot in the keycap row
+        ├── KeyBindButton.java       # shows/captures one hotkey, flags clashes
         └── ConfigLauncherButton.java # the logo-shaped button on the inventory screen
 
 src/main/resources/
@@ -295,27 +333,26 @@ src/main/resources/
 
 ## In-game usage
 
-Open your inventory and click the **keycap-shaped button** next to the recipe book, or open **Mod Menu → Fatfingert → Configure**.
+Open your inventory and click the **keycap-shaped button** next to the recipe book, open **Mod Menu → Fatfingert → Configure**, or bind the **Open Fatfingert Menu** hotkey.
 
-- **Armed** (top-right of the header) is the master switch. Everything else in the mod short-circuits to a no-op while this is off.
+- **On / Off** (top-right of the header) is the master switch. Everything else in the mod short-circuits to a no-op while this is off.
 - **Preset row:** `‹` / `›` cycle presets. **Click the preset name** to rename it inline — Enter or clicking away saves, Escape cancels. `+` creates a new preset and drops straight into naming it. `−` deletes the active preset; if it holds any rules the button arms (turns red, shows `✓`) and needs a second click to confirm, so a stray click can't destroy a loadout. The last remaining preset can't be deleted.
-- **Lock Contents** / **Strict Shift** are per-preset and global toggles respectively (hover either for the exact behavior).
+- **Lock Contents** (per-preset), **Strict Shift** and **Inventory Button** (both global) sit in one row; hover any of them for the exact behavior. Hiding the inventory button leaves Mod Menu or the hotkey as the way back in.
 - **The keycap row** is your inventory: `1`–`9` are hotbar slots, `OH` is the offhand. A guarded slot sits pressed and green, showing the item it's reserved for; an unguarded slot stands tall in slate. Click a key to select it (click again to deselect), then **+ Add Item** opens the picker.
 - **Item picker:** search by name or id; click an item to allow it, click an already-allowed item (ringed in green) to remove it again.
 - Individual items in the allow-list have a **✕** to remove just that one.
-
-There's also an unbound **"Toggle Fatfingert"** keybind under *Options → Controls → Misc*.
+- **Keybinds** (footer, next to Done) lists every hotkey — see [Hotkeys](#hotkeys). Click a key, press the new one; Escape unbinds. The same keys are under *Options → Controls → Fatfingert*.
 
 Config lives at `config/fatfingert.json` and is safe to hand-edit — slot keys are `offhand`, `hotbar0`...`hotbar8` (`hotbar0` = leftmost), item ids are full registry ids (`minecraft:shield`).
 
 ## Known limits (by design)
 
-- **Strict shift-click over-blocks in ambiguous cases.** The mod doesn't have access to vanilla's actual shift-click destination algorithm, so it approximates: if *any* guarded hotbar slot is empty and wouldn't accept the shifted item, the shift-click is blocked, even in cases where vanilla would have actually routed the item somewhere else entirely. This trades some false positives for the guarantee that a guarded slot can never be silently filled by a shift-click the player didn't intend.
+- **Strict shift-click still over-blocks where it can't see the route.** The player inventory and chest-like menus are modeled exactly, but in menus like furnaces or crafting tables a shift-click from the main inventory is assumed to fall back to the hotbar even when the item would really go into the machine, and pulling out of those menus' own slots checks every hotbar slot with room. This trades some false positives for the guarantee that a guarded slot can never be silently filled by a shift-click the player didn't intend.
 - **Creative-mode inventory is untouched.** The click-interception mixin targets `MultiPlayerGameMode.handleContainerInput`, which creative's own screen doesn't route through the same way.
 - **It never moves items for you.** A guarded offhand doesn't equip a totem into it — it only stops something *else* from ending up there instead. All the mod ever does is veto.
 
 ## Extending it
 
 - **New guardable slots:** would require widening `VALID_SLOT_KEYS`, `slotKeyForPlayerIndex()`, and the `SLOT_ORDER` array in `FatfingertConfigScreen` — armor slots aren't currently modeled since they don't have the same "wrong item lands here mid-fight" failure mode hotbar/offhand do.
-- **New per-preset behaviors:** add a field to `FatfingertConfig.Preset`, a check in the relevant mixin or in `Fatfingert.clickBlockReason()`, and a `ToggleChip` in `FatfingertConfigScreen.rebuildWidgets()` — the existing `blockEmptying`/`strictShiftClick` pair is the template.
+- **New per-preset behaviors:** add a field to `FatfingertConfig.Preset`, a check in the relevant mixin or in `Fatfingert.clickBlockReason()`, a `ToggleChip` in `FatfingertConfigScreen.rebuildWidgets()`, and a hotkey in `FatfingertKeys.register()` (plus its `en_us.json` name) — the existing `blockEmptying`/`strictShiftClick` pair is the template.
 - **New widgets:** subclass `AbstractWidget`, implement `extractWidgetRenderState` using `FatTheme`'s primitives (`panel`, `panelGradient`, `roundRect`, `outlineGlow`, `scrollbar`) rather than introducing new drawing conventions, so new UI stays visually consistent with the rest of the mod without needing new textures.

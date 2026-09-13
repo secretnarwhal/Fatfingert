@@ -27,12 +27,14 @@ public class FatfingertConfig {
     public boolean showMessages = true;
 
     /**
-     * If true, shift-clicking (quick-move) an item that is NOT allowed in a
-     * reserved hotbar slot is blocked while any reserved hotbar slot is empty,
-     * because vanilla shift-click can land items there. Also blocks
-     * shift-clicking shields into a reserved (empty) offhand.
+     * If true, a shift-click (quick-move) is blocked when vanilla would land the
+     * item inside a reserved slot that doesn't allow it. Shift-clicks that move
+     * items out - off the hotbar, or into a chest - are never blocked.
      */
     public boolean strictShiftClick = true;
+
+    /** Show the Fatfingert button on the inventory screen. */
+    public boolean showInventoryButton = true;
 
     public String activePreset = "crystal_pvp";
 
@@ -47,9 +49,10 @@ public class FatfingertConfig {
 
     public static class Preset {
         /**
-         * If true, you also cannot take the item OUT of a reserved slot
-         * (swap it away, drop it, or pick it up) unless the replacement is an
-         * allowed item. Off by default so you can still manage your inventory.
+         * If true, you also cannot take an allowed item back OUT of a reserved
+         * slot (swap it away, drop it, or pick it up) unless the replacement is
+         * also allowed. A wrong item can always be taken out. Off by default so
+         * you can still manage your inventory.
          */
         public boolean blockEmptying = false;
 
@@ -127,6 +130,16 @@ public class FatfingertConfig {
         activePreset = key;
         save();
         return key;
+    }
+
+    /** Steps the active preset forward or back through the list, wrapping around. */
+    public String cyclePreset(int direction) {
+        List<String> names = new ArrayList<>(presets.keySet());
+        if (names.isEmpty()) return activePreset;
+        int idx = names.indexOf(activePreset);
+        activePreset = names.get(Math.floorMod(idx + direction, names.size()));
+        save();
+        return activePreset;
     }
 
     /** Removes a preset. Refuses to remove the last one. */
