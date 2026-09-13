@@ -1,5 +1,6 @@
 package dev.fatfingert.mixin;
 
+import dev.fatfingert.Fatfingert;
 import dev.fatfingert.gui.FatfingertConfigScreen;
 import dev.fatfingert.gui.widget.ConfigLauncherButton;
 import net.minecraft.client.Minecraft;
@@ -24,6 +25,10 @@ public abstract class InventoryScreenMixin extends AbstractContainerScreen<Inven
 
     @Inject(method = "init", at = @At("TAIL"))
     private void fatfingert$addConfigButton(CallbackInfo ci) {
+        // init() runs again whenever the screen comes back from the Fatfingert
+        // panel, so flipping the setting there takes effect straight away.
+        if (!Fatfingert.config().showInventoryButton) return;
+
         int x = this.leftPos + 125;
         int y = this.topPos + 62;
 

@@ -14,7 +14,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import org.lwjgl.glfw.GLFW;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -87,12 +86,12 @@ public class FatfingertConfigScreen extends Screen {
         // ---- header: master switch -----------------------------------
         addRenderableWidget(new ToggleChip(
                 cardX + cardW - PAD - MASTER_W, cardY + 15, MASTER_W, 20,
-                Component.literal("Armed"),
+                Component.literal("On"),
                 Component.literal("Master switch for every guard rule."),
                 FatTheme.GREEN,
                 Fatfingert::isEnabled,
                 () -> { Fatfingert.toggle(); rebuildWidgets(); }
-        ));
+        ).offLabel(Component.literal("Off")));
 
         // ---- preset selector -----------------------------------------
         // [PRESET] ‹  name  ›            [+] [-]
@@ -154,34 +153,34 @@ public class FatfingertConfigScreen extends Screen {
         addRenderableWidget(delete);
 
         // ---- toggles --------------------------------------------------
-        int half = (innerW - 6) / 2;
-        FatfingertConfig.Preset preset = Fatfingert.activePreset();
+        int third = (innerW - 8) / 3;
         addRenderableWidget(new ToggleChip(
-                innerX, toggleRowY, half, 20,
+                innerX, toggleRowY, third, 20,
                 Component.literal("Lock Contents"),
-                Component.literal("Also stops you taking the item back OUT of a guarded slot."),
+                Component.literal("Also stops you taking an allowed item back OUT of its guarded slot. "
+                        + "A wrong item can always come out."),
                 FatTheme.AMBER,
                 () -> Fatfingert.activePreset().blockEmptying,
-                () -> {
-                    FatfingertConfig.Preset p = Fatfingert.activePreset();
-                    p.blockEmptying = !p.blockEmptying;
-                    Fatfingert.config().save();
-                    rebuildWidgets();
-                }
-        ));
+                () -> { Fatfingert.toggleLockContents(); rebuildWidgets(); }
+        ).shortLabel(Component.literal("Lock")));
         addRenderableWidget(new ToggleChip(
-                innerX + half + 6, toggleRowY, innerW - half - 6, 20,
+                innerX + third + 4, toggleRowY, third, 20,
                 Component.literal("Strict Shift"),
-                Component.literal("Blocks shift-clicks that vanilla would drop into an empty guarded slot."),
+                Component.literal("Blocks shift-clicks that would land a wrong item in a guarded slot. "
+                        + "Shifting items out is never blocked."),
                 FatTheme.AMBER,
                 () -> Fatfingert.config().strictShiftClick,
-                () -> {
-                    FatfingertConfig c = Fatfingert.config();
-                    c.strictShiftClick = !c.strictShiftClick;
-                    c.save();
-                    rebuildWidgets();
-                }
-        ));
+                () -> { Fatfingert.toggleStrictShift(); rebuildWidgets(); }
+        ).shortLabel(Component.literal("Strict")));
+        addRenderableWidget(new ToggleChip(
+                innerX + (third + 4) * 2, toggleRowY, innerW - (third + 4) * 2, 20,
+                Component.literal("Inventory Button"),
+                Component.literal("Shows the Fatfingert button in your inventory. "
+                        + "With it hidden, get back here through a keybind or Mod Menu."),
+                FatTheme.AMBER,
+                () -> Fatfingert.config().showInventoryButton,
+                () -> { Fatfingert.toggleInventoryButton(); rebuildWidgets(); }
+        ).shortLabel(Component.literal("Inventory")));
 
         // ---- keycap row ------------------------------------------------
         int x = capRowStartX;
@@ -233,8 +232,17 @@ public class FatfingertConfigScreen extends Screen {
         }
 
         // ---- footer ----------------------------------------------------
+        int doneX = cardX + cardW - PAD - 74;
         addRenderableWidget(new FatButton(
-                cardX + cardW - PAD - 74, footerY + 6, 74, 20,
+                doneX - 6 - 64, footerY + 6, 64, 20,
+                Component.literal("Keybinds"), FatButton.Style.NEUTRAL,
+                () -> {
+                    commitRename();
+                    this.minecraft.setScreen(new KeybindsScreen(this));
+                }
+        ));
+        addRenderableWidget(new FatButton(
+                doneX, footerY + 6, 74, 20,
                 Component.literal("Done"), FatButton.Style.PRIMARY,
                 this::onClose
         ));
@@ -297,14 +305,7 @@ public class FatfingertConfigScreen extends Screen {
     private void cyclePreset(int direction) {
         commitRename();
         confirmDelete = false;
-
-        FatfingertConfig cfg = Fatfingert.config();
-        List<String> names = new ArrayList<>(cfg.presets.keySet());
-        if (names.isEmpty()) return;
-        int idx = names.indexOf(cfg.activePreset);
-        idx = Math.floorMod(idx + direction, names.size());
-        cfg.activePreset = names.get(idx);
-        cfg.save();
+        Fatfingert.config().cyclePreset(direction);
         scrollOffset = 0;
         rebuildWidgets();
     }
