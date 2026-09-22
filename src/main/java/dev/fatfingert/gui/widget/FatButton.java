@@ -7,7 +7,9 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.input.MouseButtonInfo;
 import net.minecraft.network.chat.Component;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.List;
 import java.util.Optional;
@@ -29,6 +31,7 @@ public class FatButton extends AbstractWidget {
     private final Runnable onPress;
     private final Style style;
     private List<Component> hint;
+    private Runnable onRightClick;
 
     public FatButton(int x, int y, int w, int h, Component label, Style style, Runnable onPress) {
         super(x, y, w, h, label);
@@ -39,6 +42,12 @@ public class FatButton extends AbstractWidget {
     /** Adds a hover tooltip. Returns {@code this} so it can be chained inline. */
     public FatButton hint(Component... lines) {
         this.hint = List.of(lines);
+        return this;
+    }
+
+    /** Also answers right clicks, with {@code action}. Returns {@code this} for chaining. */
+    public FatButton onRightClick(Runnable action) {
+        this.onRightClick = action;
         return this;
     }
 
@@ -97,8 +106,18 @@ public class FatButton extends AbstractWidget {
     }
 
     @Override
+    protected boolean isValidClickButton(MouseButtonInfo info) {
+        return super.isValidClickButton(info)
+                || (onRightClick != null && info.button() == GLFW.GLFW_MOUSE_BUTTON_RIGHT);
+    }
+
+    @Override
     public void onClick(MouseButtonEvent event, boolean doubleClick) {
-        onPress.run();
+        if (onRightClick != null && event.button() == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+            onRightClick.run();
+        } else {
+            onPress.run();
+        }
     }
 
     @Override

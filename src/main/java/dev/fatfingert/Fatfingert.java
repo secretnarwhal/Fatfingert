@@ -62,17 +62,20 @@ public final class Fatfingert {
         return config;
     }
 
-    public static boolean isEnabled() {
-        return config().enabled;
+    /** True while the built-in None preset is active, which guards nothing and can't be edited. */
+    public static boolean noneActive() {
+        return FatfingertConfig.isNone(config().activePreset);
     }
 
-    public static boolean toggle() {
-        config().enabled = !config().enabled;
+    public static boolean toggleWarnings() {
+        config().showWarnings = !config().showWarnings;
         config().save();
-        return config().enabled;
+        return config().showWarnings;
     }
 
+    /** Flips Lock Contents on the active preset. None has nothing to lock, so it stays off. */
     public static boolean toggleLockContents() {
+        if (noneActive()) return false;
         FatfingertConfig.Preset p = activePreset();
         p.blockEmptying = !p.blockEmptying;
         config().save();
@@ -102,15 +105,16 @@ public final class Fatfingert {
         return (rule == null || rule.isEmpty()) ? null : rule;
     }
 
-    public static boolean hasRule(String slotKey) {
-        return ruleFor(slotKey) != null;
-    }
-
     /** Number of slots the active preset currently guards. */
     public static int guardedSlotCount() {
+        return guardedSlotCount(activePreset());
+    }
+
+    public static int guardedSlotCount(FatfingertConfig.Preset preset) {
         int n = 0;
         for (String key : VALID_SLOT_KEYS) {
-            if (hasRule(key)) n++;
+            List<String> rule = preset.rules.get(key);
+            if (rule != null && !rule.isEmpty()) n++;
         }
         return n;
     }
@@ -415,7 +419,7 @@ public final class Fatfingert {
     }
 
     public static void notifyBlocked(Player player, String reason) {
-        if (!config().showMessages || player == null) return;
+        if (!config().showWarnings || player == null) return;
         long now = System.currentTimeMillis();
         if (now - lastMessageMs < 400) return;
         lastMessageMs = now;

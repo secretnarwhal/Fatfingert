@@ -10,14 +10,16 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.ItemStack;
 import org.lwjgl.glfw.GLFW;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The Fatfingert control panel: master switch, preset picker, the keycap row of
+ * The Fatfingert control panel: preset picker, toggles, the keycap row of
  * guardable slots, and the allow-list for whichever slot is selected.
  */
 public class FatfingertConfigScreen extends Screen {
@@ -31,7 +33,8 @@ public class FatfingertConfigScreen extends Screen {
 
     private static final int ROW_H = 20;
     private static final int PAD = 14;
-    private static final int MASTER_W = 96;
+    private static final int HEADER_TOGGLE_W = 124;
+    private static final int MENU_ROW_H = 16;
 
     private static final String[] SLOT_ORDER = {
         "hotbar0", "hotbar1", "hotbar2", "hotbar3", "hotbar4",
@@ -54,6 +57,10 @@ public class FatfingertConfigScreen extends Screen {
     /** Delete is two-step whenever the preset actually holds rules. */
     private boolean confirmDelete = false;
 
+    /** The list of presets that drops down from the preset name. */
+    private boolean presetMenuOpen = false;
+    private int presetMenuScroll = 0;
+
     // Layout, recomputed on every init/resize.
     private int cardX, cardY, cardW, cardH;
     private int innerX, innerW;
@@ -64,6 +71,7 @@ public class FatfingertConfigScreen extends Screen {
     private int itemsPerPage;
     private int capRowStartX, capW;
     private int headerH, footerH;
+    private int nameX, nameW;
 
     public FatfingertConfigScreen(Screen parent) {
         super(Component.literal("Fatfingert"));
@@ -82,21 +90,23 @@ public class FatfingertConfigScreen extends Screen {
         layout();
 
         FatfingertConfig cfg = Fatfingert.config();
+        // None is the built-in off switch: nothing on it can be edited.
+        boolean locked = Fatfingert.noneActive();
 
-        // ---- header: master switch -----------------------------------
+        // ---- header: inventory button ----------------------------------
         addRenderableWidget(new ToggleChip(
-                cardX + cardW - PAD - MASTER_W, cardY + 15, MASTER_W, 20,
-                Component.literal("On"),
-                Component.literal("Master switch for every guard rule."),
+                cardX + cardW - PAD - HEADER_TOGGLE_W, cardY + 15, HEADER_TOGGLE_W, 20,
+                Component.literal("Inventory Button"),
+                Component.literal("Shows the Fatfingert button in your inventory. "
+                        + "With it hidden, get back here through a keybind or Mod Menu."),
                 FatTheme.GREEN,
-                Fatfingert::isEnabled,
-                () -> { Fatfingert.toggle(); rebuildWidgets(); }
-        ).offLabel(Component.literal("Off")));
+                () -> Fatfingert.config().showInventoryButton,
+                () -> { Fatfingert.toggleInventoryButton(); rebuildWidgets(); }
+        ).shortLabel(Component.literal("Inventory")));
 
         // ---- preset selector -----------------------------------------
-        // [PRESET] ‹  name  ›            [+] [-]
-        int nameX = innerX + 64;
-        int nextX = innerX + innerW - 61;
+        // [PRESET] ‹  name ▾  ›          [+] [-]
+        int nextX = nameX + nameW;
         int addX  = innerX + innerW - 41;
         int delX  = innerX + innerW - 21;
 
@@ -113,7 +123,7 @@ public class FatfingertConfigScreen extends Screen {
 
         if (renaming) {
             String seed = nameBox != null ? nameBox.getValue() : cfg.activePreset;
-            nameBox = new EditBox(this.font, nameX + 3, presetRowY + 6, nextX - nameX - 8, 12,
+            nameBox = new EditBox(this.font, nameX + 3, presetRowY + 6, nameW - 8, 12,
                     Component.literal("Preset name"));
             nameBox.setMaxLength(32);
             nameBox.setBordered(false);
@@ -123,14 +133,19 @@ public class FatfingertConfigScreen extends Screen {
             addRenderableWidget(nameBox);
         } else {
             nameBox = null;
+            // Trimmed to leave room on the right for the caret that marks it as a menu.
             addRenderableWidget(new FatButton(
-                    nameX, presetRowY + 1, nextX - nameX, 18,
-                    Component.literal(Fatfingert.prettyPreset(cfg.activePreset)),
+                    nameX, presetRowY + 1, nameW, 18,
+                    Component.literal(this.font.plainSubstrByWidth(
+                            Fatfingert.prettyPreset(cfg.activePreset), nameW - 32)),
                     FatButton.Style.GHOST,
-                    this::startRename
-            ).hint(
+                    this::togglePresetMenu
+            ).onRightClick(locked ? null : this::startRename).hint(
                     Component.literal(cfg.activePreset),
-                    Component.literal("Click to rename this preset")
+                    Component.literal("Click to switch presets"),
+                    Component.literal(locked
+                            ? "None is built in and can't be renamed"
+                            : "Right-click to rename")
             ));
         }
 
@@ -140,7 +155,7 @@ public class FatfingertConfigScreen extends Screen {
                 this::addPreset
         ).hint(Component.literal("New preset")));
 
-        boolean canDelete = cfg.presets.size() > 1;
+        boolean canDelete = !locked && cfg.presets.size() > 1;
         FatButton delete = new FatButton(
                 delX, presetRowY + 2, 18, 16,
                 Component.literal(confirmDelete ? "✓" : "−"),
@@ -154,15 +169,19 @@ public class FatfingertConfigScreen extends Screen {
 
         // ---- toggles --------------------------------------------------
         int third = (innerW - 8) / 3;
-        addRenderableWidget(new ToggleChip(
+        ToggleChip lock = new ToggleChip(
                 innerX, toggleRowY, third, 20,
                 Component.literal("Lock Contents"),
-                Component.literal("Also stops you taking an allowed item back OUT of its guarded slot. "
-                        + "A wrong item can always come out."),
+                Component.literal(locked
+                        ? "The None preset guards nothing, so there is nothing to lock."
+                        : "Also stops you taking an allowed item back OUT of its guarded slot. "
+                                + "A wrong item can always come out."),
                 FatTheme.AMBER,
                 () -> Fatfingert.activePreset().blockEmptying,
                 () -> { Fatfingert.toggleLockContents(); rebuildWidgets(); }
-        ).shortLabel(Component.literal("Lock")));
+        ).shortLabel(Component.literal("Lock"));
+        lock.active = !locked;
+        addRenderableWidget(lock);
         addRenderableWidget(new ToggleChip(
                 innerX + third + 4, toggleRowY, third, 20,
                 Component.literal("Strict Shift"),
@@ -174,13 +193,13 @@ public class FatfingertConfigScreen extends Screen {
         ).shortLabel(Component.literal("Strict")));
         addRenderableWidget(new ToggleChip(
                 innerX + (third + 4) * 2, toggleRowY, innerW - (third + 4) * 2, 20,
-                Component.literal("Inventory Button"),
-                Component.literal("Shows the Fatfingert button in your inventory. "
-                        + "With it hidden, get back here through a keybind or Mod Menu."),
+                Component.literal("Warnings"),
+                Component.literal("Shows a warning above your hotbar whenever Fatfingert "
+                        + "blocks an input."),
                 FatTheme.AMBER,
-                () -> Fatfingert.config().showInventoryButton,
-                () -> { Fatfingert.toggleInventoryButton(); rebuildWidgets(); }
-        ).shortLabel(Component.literal("Inventory")));
+                () -> Fatfingert.config().showWarnings,
+                () -> { Fatfingert.toggleWarnings(); rebuildWidgets(); }
+        ));
 
         // ---- keycap row ------------------------------------------------
         int x = capRowStartX;
@@ -189,10 +208,10 @@ public class FatfingertConfigScreen extends Screen {
             boolean isOffhand = slotKey.equals("offhand");
             if (isOffhand) x += OFFHAND_GAP - CAP_GAP;
 
-            addRenderableWidget(new KeycapButton(
+            KeycapButton cap = new KeycapButton(
                     x, capRowY, capW, CAP_H, CAP_DEPTH,
                     slotKey, isOffhand ? "OH" : String.valueOf(i + 1),
-                    () -> selectedSlot,
+                    this::editingSlot,
                     key -> {
                         commitRename();
                         confirmDelete = false;
@@ -200,12 +219,14 @@ public class FatfingertConfigScreen extends Screen {
                         scrollOffset = 0;
                         rebuildWidgets();
                     }
-            ));
+            );
+            cap.active = !locked;
+            addRenderableWidget(cap);
             x += capW + CAP_GAP;
         }
 
         // ---- allow-list ------------------------------------------------
-        if (selectedSlot != null) {
+        if (editingSlot() != null) {
             addRenderableWidget(new FatButton(
                     innerX + innerW - 76, detailHeaderY - 2, 76, 16,
                     Component.literal("+ Add Item"), FatButton.Style.PRIMARY,
@@ -298,6 +319,10 @@ public class FatfingertConfigScreen extends Screen {
 
         int rowW = SLOT_ORDER.length * (capW + CAP_GAP) - CAP_GAP + (OFFHAND_GAP - CAP_GAP);
         capRowStartX = cardX + (cardW - rowW) / 2;
+
+        // The preset name spans from the PRESET label to the › button.
+        nameX = innerX + 64;
+        nameW = innerW - 125;
     }
 
     // ---- actions -------------------------------------------------------
@@ -305,8 +330,34 @@ public class FatfingertConfigScreen extends Screen {
     private void cyclePreset(int direction) {
         commitRename();
         confirmDelete = false;
+        presetMenuOpen = false;
         Fatfingert.config().cyclePreset(direction);
         scrollOffset = 0;
+        rebuildWidgets();
+    }
+
+    private void togglePresetMenu() {
+        commitRename();
+        confirmDelete = false;
+        presetMenuOpen = !presetMenuOpen;
+        if (presetMenuOpen) {
+            // Open scrolled so the active preset is in view.
+            FatfingertConfig cfg = Fatfingert.config();
+            int index = new ArrayList<>(cfg.presets.keySet()).indexOf(cfg.activePreset);
+            int rows = presetMenuRows();
+            presetMenuScroll = Math.max(0, Math.min(index - rows / 2, cfg.presets.size() - rows));
+        }
+        rebuildWidgets();
+    }
+
+    private void selectPreset(String key) {
+        presetMenuOpen = false;
+        confirmDelete = false;
+        FatfingertConfig cfg = Fatfingert.config();
+        if (!key.equals(cfg.activePreset)) {
+            cfg.selectPreset(key);
+            scrollOffset = 0;
+        }
         rebuildWidgets();
     }
 
@@ -314,6 +365,7 @@ public class FatfingertConfigScreen extends Screen {
     private void addPreset() {
         commitRename();
         confirmDelete = false;
+        presetMenuOpen = false;
         Fatfingert.config().addPreset();
         selectedSlot = null;
         scrollOffset = 0;
@@ -325,7 +377,7 @@ public class FatfingertConfigScreen extends Screen {
 
     private void deletePreset() {
         FatfingertConfig cfg = Fatfingert.config();
-        if (cfg.presets.size() <= 1) return;
+        if (Fatfingert.noneActive() || cfg.presets.size() <= 1) return;
 
         cancelRename();
 
@@ -345,7 +397,9 @@ public class FatfingertConfigScreen extends Screen {
     }
 
     private void startRename() {
+        if (Fatfingert.noneActive()) return;
         confirmDelete = false;
+        presetMenuOpen = false;
         renaming = true;
         nameBox = null;
         focusNameBox = true;
@@ -391,6 +445,42 @@ public class FatfingertConfigScreen extends Screen {
         if (scrollOffset < 0) scrollOffset = 0;
     }
 
+    /** The slot being edited. None can't be edited, so there never is one there. */
+    private String editingSlot() {
+        return Fatfingert.noneActive() ? null : selectedSlot;
+    }
+
+    // ---- preset menu ---------------------------------------------------
+
+    private int presetMenuY() {
+        return presetRowY + 21;
+    }
+
+    /** As many rows as there are presets, or as fit above the footer. */
+    private int presetMenuRows() {
+        int room = (footerY - 4 - presetMenuY() - 4) / MENU_ROW_H;
+        return Math.max(1, Math.min(Fatfingert.config().presets.size(), room));
+    }
+
+    private int presetMenuH() {
+        return presetMenuRows() * MENU_ROW_H + 4;
+    }
+
+    private boolean overPresetMenu(double mouseX, double mouseY) {
+        return mouseX >= nameX && mouseX < nameX + nameW
+            && mouseY >= presetMenuY() && mouseY < presetMenuY() + presetMenuH();
+    }
+
+    /** The preset under the mouse, or null. */
+    private String presetMenuKeyAt(double mouseX, double mouseY) {
+        if (!overPresetMenu(mouseX, mouseY)) return null;
+        int row = (int) Math.floor((mouseY - presetMenuY() - 2) / MENU_ROW_H);
+        if (row < 0 || row >= presetMenuRows()) return null;
+        List<String> keys = new ArrayList<>(Fatfingert.config().presets.keySet());
+        int index = presetMenuScroll + row;
+        return index < keys.size() ? keys.get(index) : null;
+    }
+
     // ---- rendering -----------------------------------------------------
 
     @Override
@@ -421,9 +511,7 @@ public class FatfingertConfigScreen extends Screen {
 
         // While renaming, sink the name area so it reads as an input field.
         if (renaming) {
-            int nameX = innerX + 64;
-            int nextX = innerX + innerW - 61;
-            FatTheme.panel(g, nameX, presetRowY + 3, nextX - nameX, 14,
+            FatTheme.panel(g, nameX, presetRowY + 3, nameW, 14,
                     0xFF0E0E12, FatTheme.alpha(FatTheme.GREEN, 0.45f));
         }
 
@@ -438,14 +526,21 @@ public class FatfingertConfigScreen extends Screen {
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor g, int mouseX, int mouseY, float delta) {
+        // While the preset menu is open it has the mouse to itself: nothing
+        // underneath lights up or shows a tooltip.
+        int underX = presetMenuOpen ? -1 : mouseX;
+        int underY = presetMenuOpen ? -1 : mouseY;
+
         drawHeader(g);
         drawPresetRow(g);
         drawSlotSectionLabel(g);
 
-        super.extractRenderState(g, mouseX, mouseY, delta);
+        super.extractRenderState(g, underX, underY, delta);
 
-        drawDetailSection(g, mouseX, mouseY);
+        drawDetailSection(g, underX, underY);
         drawFooter(g);
+
+        if (presetMenuOpen) drawPresetMenu(g, mouseX, mouseY);
     }
 
     private void drawHeader(GuiGraphicsExtractor g) {
@@ -458,15 +553,15 @@ public class FatfingertConfigScreen extends Screen {
         g.text(this.font, "FAT", textX, cardY + 13, FatTheme.TEXT, true);
         g.text(this.font, "FINGERT", textX + fatW, cardY + 13, FatTheme.GREEN, true);
 
-        boolean on = Fatfingert.isEnabled();
         int guarded = Fatfingert.guardedSlotCount();
+        boolean on = guarded > 0;
         String tail = guarded + " slot" + (guarded == 1 ? "" : "s") + " guarded";
         String full = on ? "misinput insurance · " + tail : "standing down · nothing is blocked";
         String brief = on ? tail : "nothing is blocked";
 
-        // Keep the subtitle clear of the master switch: drop to the short form
+        // Keep the subtitle clear of the header toggle: drop to the short form
         // before resorting to chopping a word in half.
-        int subLimit = Math.max(0, (cardX + cardW - PAD - MASTER_W - 6) - textX);
+        int subLimit = Math.max(0, (cardX + cardW - PAD - HEADER_TOGGLE_W - 6) - textX);
         String sub = this.font.width(full) <= subLimit ? full : brief;
         g.text(this.font, this.font.plainSubstrByWidth(sub, subLimit),
                 textX, cardY + 25, on ? FatTheme.TEXT_DIM : FatTheme.RED, false);
@@ -475,18 +570,34 @@ public class FatfingertConfigScreen extends Screen {
     private void drawPresetRow(GuiGraphicsExtractor g) {
         // The name itself is a widget (button, or an edit box while renaming).
         g.text(this.font, "PRESET", innerX + 8, presetRowY + 7, FatTheme.TEXT_MUTED, false);
+        if (!renaming) {
+            FatTheme.caret(g, nameX + nameW - 12, presetRowY + 9, !presetMenuOpen,
+                    presetMenuOpen ? FatTheme.TEXT : FatTheme.TEXT_MUTED);
+        }
     }
 
     private void drawSlotSectionLabel(GuiGraphicsExtractor g) {
         FatTheme.accentBar(g, innerX, slotLabelY, 8, FatTheme.GREEN);
         g.text(this.font, "SLOTS", innerX + 6, slotLabelY, FatTheme.TEXT_DIM, false);
 
-        String hint = selectedSlot == null ? "click a key to edit it" : Fatfingert.prettySlot(selectedSlot);
+        String slot = editingSlot();
+        String hint = Fatfingert.noneActive() ? "switch presets to edit"
+                : slot == null ? "click a key to edit it" : Fatfingert.prettySlot(slot);
         int w = this.font.width(hint);
         g.text(this.font, hint, innerX + innerW - w, slotLabelY, FatTheme.TEXT_MUTED, false);
     }
 
     private void drawDetailSection(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+        if (Fatfingert.noneActive()) {
+            g.centeredText(this.font,
+                    Component.literal("None guards nothing"),
+                    cardX + cardW / 2, detailHeaderY + 1, FatTheme.TEXT_DIM);
+            g.centeredText(this.font,
+                    Component.literal("Switch to another preset to guard slots"),
+                    cardX + cardW / 2, listY + listH / 2 - 4, FatTheme.TEXT_MUTED);
+            return;
+        }
+
         if (selectedSlot == null) {
             g.centeredText(this.font,
                     Component.literal("No key selected"),
@@ -557,8 +668,78 @@ public class FatfingertConfigScreen extends Screen {
         g.text(this.font, "made by " + Fatfingert.AUTHOR, cardX + PAD + 18, y, FatTheme.TEXT_DIM, false);
     }
 
+    private void drawPresetMenu(GuiGraphicsExtractor g, int mouseX, int mouseY) {
+        // A stratum of its own, so it covers the widgets and item icons drawn before it.
+        g.nextStratum();
+
+        FatfingertConfig cfg = Fatfingert.config();
+        List<String> keys = new ArrayList<>(cfg.presets.keySet());
+        int y = presetMenuY();
+        int rows = presetMenuRows();
+        int h = presetMenuH();
+        presetMenuScroll = Math.max(0, Math.min(presetMenuScroll, keys.size() - rows));
+
+        FatTheme.roundRect(g, nameX - 1, y, nameW + 2, h + 2, 0x60000000);
+        FatTheme.panel(g, nameX, y, nameW, h, FatTheme.CARD_RAISED, FatTheme.BORDER_LIT);
+
+        boolean scrolls = keys.size() > rows;
+        int rowRight = nameX + nameW - (scrolls ? 7 : 2);
+        String hoveredKey = presetMenuKeyAt(mouseX, mouseY);
+
+        int end = Math.min(keys.size(), presetMenuScroll + rows);
+        for (int i = presetMenuScroll; i < end; i++) {
+            String key = keys.get(i);
+            int rowY = y + 2 + (i - presetMenuScroll) * MENU_ROW_H;
+            boolean active = key.equals(cfg.activePreset);
+            boolean hovered = key.equals(hoveredKey);
+
+            if (hovered) {
+                FatTheme.roundRect(g, nameX + 2, rowY, rowRight - nameX - 2, MENU_ROW_H, 0x18FFFFFF);
+            }
+            if (active) {
+                FatTheme.accentBar(g, nameX + 3, rowY + 3, MENU_ROW_H - 6, FatTheme.GREEN);
+            }
+
+            int guarded = Fatfingert.guardedSlotCount(cfg.presets.get(key));
+            String tail = FatfingertConfig.isNone(key) ? "off" : guarded + (guarded == 1 ? " slot" : " slots");
+            int tailW = this.font.width(tail);
+            g.text(this.font, tail, rowRight - 4 - tailW, rowY + 4, FatTheme.TEXT_MUTED, false);
+
+            int nameRoom = rowRight - 4 - tailW - 6 - (nameX + 9);
+            g.text(this.font, this.font.plainSubstrByWidth(Fatfingert.prettyPreset(key), nameRoom),
+                    nameX + 9, rowY + 4,
+                    active ? FatTheme.GREEN : hovered ? FatTheme.TEXT : FatTheme.TEXT_DIM, false);
+        }
+
+        if (scrolls) {
+            FatTheme.scrollbar(g, nameX + nameW - 5, y + 3, h - 6, keys.size(), rows, presetMenuScroll);
+        }
+    }
+
+    // ---- input ---------------------------------------------------------
+
+    @Override
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if (presetMenuOpen) {
+            // The menu is modal: a row picks that preset, and a click anywhere
+            // else only closes the menu rather than landing on what is beneath.
+            String key = presetMenuKeyAt(event.x(), event.y());
+            if (key != null && event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+                selectPreset(key);
+            } else if (!overPresetMenu(event.x(), event.y())) {
+                presetMenuOpen = false;
+            }
+            return true;
+        }
+        return super.mouseClicked(event, doubleClick);
+    }
+
     @Override
     public boolean keyPressed(KeyEvent event) {
+        if (presetMenuOpen && event.isEscape()) {
+            presetMenuOpen = false;
+            return true;
+        }
         if (renaming) {
             int key = event.key();
             if (key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER) {
@@ -589,6 +770,14 @@ public class FatfingertConfigScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        if (presetMenuOpen) {
+            if (overPresetMenu(mouseX, mouseY)) {
+                int maxScroll = Fatfingert.config().presets.size() - presetMenuRows();
+                presetMenuScroll = Math.max(0, Math.min(maxScroll,
+                        presetMenuScroll - (int) Math.signum(verticalAmount)));
+            }
+            return true;
+        }
         if (selectedSlot != null && mouseY >= listY && mouseY < listY + listH) {
             List<String> rule = Fatfingert.ruleFor(selectedSlot);
             if (rule != null && rule.size() > itemsPerPage) {

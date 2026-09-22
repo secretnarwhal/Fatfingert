@@ -73,7 +73,7 @@ public class KeycapButton extends AbstractWidget {
                         capTop + capH - font.lineHeight - 1,
                         FatTheme.TEXT, true);
             }
-        } else if (hot) {
+        } else if (hot && this.active) {
             FatTheme.outlineGlow(g, x - 1, capTop - 1, w + 2, capH + depth + 1,
                     FatTheme.alpha(FatTheme.BORDER_LIT, 0.9f));
         }

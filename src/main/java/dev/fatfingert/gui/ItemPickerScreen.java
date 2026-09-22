@@ -247,7 +247,7 @@ public class ItemPickerScreen extends Screen {
     private void toggleItem(String itemId) {
         FatfingertConfig cfg = Fatfingert.config();
         FatfingertConfig.Preset preset = cfg.presets.get(cfg.activePreset);
-        if (preset == null) return;
+        if (preset == null || FatfingertConfig.isNone(cfg.activePreset)) return;
 
         List<String> rule = preset.rules.get(slotKey);
         if (rule != null && rule.contains(itemId)) {
