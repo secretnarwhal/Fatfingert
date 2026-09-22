@@ -81,7 +81,7 @@ Three mixins, each targeting the narrowest vanilla method that still sees every 
 
 ### `MinecraftClientMixin` → `Minecraft.handleKeybinds()` (`@At("HEAD")`)
 
-Runs once a client tick, before vanilla consumes any queued key clicks. It **peeks** at whether the pending F-key (swap-to-offhand) or Q-key (drop) press would violate a rule, and if so, drains the key's click queue (`consumeClick()` in a `while` loop, since a key can queue multiple presses per tick) without letting vanilla see it. The key is confirmed pressed *before* the notification fires, so a background repeat-key spam doesn't spam the block message — `notifyBlocked` is separately rate-limited to one message per 400ms regardless.
+Runs once a client tick, before vanilla consumes any queued key clicks. It **peeks** at whether the pending F-key (swap-to-offhand) or Q-key (drop) press would violate a rule, and if so, drains the key's click queue (`consumeClick()` in a `while` loop, since a key can queue multiple presses per tick) without letting vanilla see it. The key is confirmed pressed *before* the notification fires, so a background repeat-key spam doesn't spam the block warning — `notifyBlocked` is separately rate-limited to one warning per 400ms regardless, and only shows anything at all when **Warnings** (`showWarnings`, off by default) is on.
 
 ### `ClientPlayerInteractionManagerMixin` → `MultiPlayerGameMode.handleInventoryMouseClick()` (`@At("HEAD")`, cancellable)
 
@@ -105,7 +105,7 @@ Shifting items *out* — off the hotbar, or into a chest — is never blocked. M
 
 Purely cosmetic. Adds the `ConfigLauncherButton` (the button drawn as the logo mark) to the vanilla inventory screen next to the recipe book button, unless `showInventoryButton` is off. `init()` runs again whenever the inventory screen comes back from the Fatfingert panel, so toggling it there takes effect immediately. No gameplay logic here at all.
 
-All three mixins check `Fatfingert.isEnabled()` first and bail immediately if the master switch is off, so disabling the mod at runtime doesn't require restarting or reloading mixins — the injected code becomes a no-op.
+There is no master switch. Standing the mod down means switching to a preset that guards nothing — normally the built-in **None** — at which point every rule lookup comes back empty and the injected code vetoes nothing, with no restart or mixin reload involved.
 
 ## The config file
 
@@ -113,8 +113,7 @@ All three mixins check `Fatfingert.isEnabled()` first and bail immediately if th
 
 ```json
 {
-  "enabled": true,
-  "showMessages": true,
+  "showWarnings": false,
   "strictShiftClick": true,
   "showInventoryButton": true,
   "activePreset": "crystal_pvp",
@@ -129,7 +128,13 @@ All three mixins check `Fatfingert.isEnabled()` first and bail immediately if th
 }
 ```
 
-`seededDefaults` (see below) exists purely to make the two built-in presets deletable — without it, `ensureDefaults()` would silently resurrect them on every load.
+`seededDefaults` (see below) exists purely to make the built-in Crystal PvP preset deletable — without it, `ensureDefaults()` would silently resurrect it on every load.
+
+`ensureDefaults()` also migrates 3.0.x configs, and `load()` writes the result straight back so each step only ever runs once:
+
+- **`enabled`** (the old master switch) is read through a private, nullable field. If it was `false`, the active preset becomes None, so turning the mod off before updating doesn't leave you guarded again afterwards. It's then nulled, and Gson leaves nulls out of the file.
+- **`showMessages`** is simply dropped. Warnings live in the new `showWarnings`, so every existing config gets the new default (off) instead of carrying over a `true` that was only ever the old default.
+- **Rules on `none`** (it used to be an ordinary preset) move to a preset of their own, `custom`, and stay active if `none` was, rather than being deleted.
 
 If the file is missing, corrupt, or fails to parse, `load()` catches the exception, logs it, and falls back to a fresh default config — it does not crash the client on a bad config file.
 
@@ -137,15 +142,18 @@ If the file is missing, corrupt, or fails to parse, `load()` catches the excepti
 
 Presets are stored as a `LinkedHashMap<String, Preset>` keyed by an internal slug (`"crystal_pvp"`), with a separate display name derived on the fly by `Fatfingert.prettyPreset()` (`"crystal_pvp"` → `"Crystal PvP"`, everything else title-cased on underscores). The UI only ever shows the pretty form; the slug is what's persisted and is also visible in the rename button's tooltip for anyone editing the JSON by hand.
 
-Three operations, all on `FatfingertConfig`:
+`none` (`FatfingertConfig.NONE`) is special: `ensureDefaults()` guarantees it exists, sits first in the list, and holds no rules. It's the one preset that can't be edited — no rules, no Lock Contents, no rename, no delete — so it's always there as the off switch.
+
+The operations, all on `FatfingertConfig`:
 
 - **`addPreset()`** — creates an empty preset under a unique key (`uniqueKey("new_preset")`, appending `_2`, `_3`, ... on collision), makes it active, and returns the key. The caller (`FatfingertConfigScreen.addPreset()`) immediately opens the rename box on it.
-- **`removePreset(key)`** — refuses if it's the last remaining preset (`presets.size() <= 1`) or the key doesn't exist. If the removed preset was active, falls back to whatever preset happens to be first in iteration order.
-- **`renamePreset(oldKey, rawName)`** — trims the input, ignores blank names, and de-duplicates collisions the same way `addPreset` does rather than rejecting them outright. Rebuilds the whole `LinkedHashMap` to preserve the preset's position in the list (Java's `Map` has no in-place key-rename), and flips `activePreset` to the new key if the renamed preset was active.
+- **`selectPreset(key)`** — makes an existing preset active; the preset menu calls it.
+- **`removePreset(key)`** — refuses for `none`, for the last remaining preset (`presets.size() <= 1`), or for a key that doesn't exist. If the removed preset was active, falls back to whatever preset happens to be first in iteration order.
+- **`renamePreset(oldKey, rawName)`** — trims the input, ignores blank names, refuses to rename `none`, and de-duplicates collisions the same way `addPreset` does rather than rejecting them outright (any casing of "none" counts as a collision). Rebuilds the whole `LinkedHashMap` to preserve the preset's position in the list (Java's `Map` has no in-place key-rename), and flips `activePreset` to the new key if the renamed preset was active.
 
 ### Why `seededDefaults` exists
 
-The original `ensureDefaults()` (inherited from SlotGuard) used `presets.computeIfAbsent("none", ...)` and the same for `"crystal_pvp"` on *every* config load — which is fine when presets can't be deleted, but once deletion existed, deleting either built-in preset would have had it silently reappear on the next game launch. `seededDefaults` is a one-time latch: the built-ins are created once, ever, and after that `ensureDefaults()` only guarantees the map isn't empty (falling back to a bare `"none"` preset if somehow all presets were removed — which the UI itself prevents, but hand-edited JSON could still produce).
+The original `ensureDefaults()` (inherited from SlotGuard) used `presets.computeIfAbsent(...)` for `"none"` and `"crystal_pvp"` on *every* config load — which is fine when presets can't be deleted, but once deletion existed, deleting a built-in preset would have had it silently reappear on the next game launch. `seededDefaults` is a one-time latch: Crystal PvP is created once, ever. None doesn't need the latch — it can't be deleted, so recreating it on every load is exactly what's wanted.
 
 ### The rename UI's focus problem
 
@@ -160,7 +168,7 @@ if (listener.mouseClicked(event, doubleClick) && listener.shouldTakeFocusAfterIn
 }
 ```
 
-`shouldTakeFocusAfterInteraction()` defaults to `true` and neither `AbstractWidget` nor `EditBox` overrides it. So: clicking the preset name button runs `startRename()`, which calls `rebuildWidgets()`, which discards that button and creates an `EditBox` in its place — but then control returns to vanilla's `mouseClicked`, which calls `setFocused()` on the **now-discarded button reference**, stealing focus right back off the brand-new `EditBox`. The rename box would appear but never actually accept keystrokes, and `tick()`'s "commit on focus loss" check would fire immediately, closing the rename before the player could type anything.
+`shouldTakeFocusAfterInteraction()` defaults to `true` and neither `AbstractWidget` nor `EditBox` overrides it. So: right-clicking the preset name button runs `startRename()`, which calls `rebuildWidgets()`, which discards that button and creates an `EditBox` in its place — but then control returns to vanilla's `mouseClicked`, which calls `setFocused()` on the **now-discarded button reference**, stealing focus right back off the brand-new `EditBox`. The rename box would appear but never actually accept keystrokes, and `tick()`'s "commit on focus loss" check would fire immediately, closing the rename before the player could type anything.
 
 The fix is a one-tick deferral: `startRename()` sets `focusNameBox = true` instead of calling `setFocused()` directly, and `tick()` claims focus on the *next* tick, after vanilla's post-click focus assignment has already happened and lost:
 
@@ -196,6 +204,12 @@ Because the background is a *step inside* `render()` rather than an earlier sepa
 
 Tooltips are the one thing that does *not* need reworking here: `GuiGraphics.setTooltipForNextFrame(...)` exists on 1.21.11 exactly as it does on 26.1, so the widgets queue their tooltips the same way and vanilla draws them after every widget is done. (The `1.21` branch has to route these through `Screen#setTooltipForNextRenderPass` instead.)
 
+### The preset menu
+
+Left-clicking the preset name drops down a list of every preset. It isn't a widget: `FatfingertConfigScreen` draws it last, after `g.nextStratum()` so it covers the widgets and item icons beneath, and hit-tests it itself in a `mouseClicked` override that runs before `super`. While it's open it's modal — a click on a row switches to that preset, a click anywhere else only closes it, Escape closes it, and the scroll wheel scrolls it when there are more presets than fit above the footer. The widgets underneath are rendered with the mouse at `(-1, -1)` so nothing behind the menu lights up or shows a tooltip.
+
+`FatButton` takes an optional `onRightClick` action (it widens `isValidClickButton` to accept the right button), which is how the same name button renames on right-click.
+
 ### Responsive layout, not fixed coordinates
 
 `FatfingertConfigScreen.layout()` recomputes every coordinate from `this.width`/`this.height` on each `init()` (window resize triggers a fresh `init()` in vanilla). Two adaptive behaviors matter:
@@ -205,7 +219,7 @@ Tooltips are the one thing that does *not* need reworking here: `GuiGraphics.set
 
 ### Offline layout verification
 
-Because iterating against a live Minecraft client is slow (asset downloads, JVM startup, manual navigation to the screen), the layout math and `FatTheme` drawing primitives were mirrored 1:1 into a standalone `java.awt.Graphics2D` harness during development, rendering the screens to PNG at several logical resolutions (640×360, 960×540, 320×240) without touching Minecraft at all. This caught real layout bugs — the keycap row exceeding the card width at minimum GUI scale, the header subtitle running under the master switch, a footer hint overflowing the item picker — before ever launching the game. It's not part of the mod or the build; it was a throwaway development tool, not checked into this repo.
+Because iterating against a live Minecraft client is slow (asset downloads, JVM startup, manual navigation to the screen), the layout math and `FatTheme` drawing primitives were mirrored 1:1 into a standalone `java.awt.Graphics2D` harness during development, rendering the screens to PNG at several logical resolutions (640×360, 960×540, 320×240) without touching Minecraft at all. This caught real layout bugs — the keycap row exceeding the card width at minimum GUI scale, the header subtitle running under the header toggle, a footer hint overflowing the item picker — before ever launching the game. It's not part of the mod or the build; it was a throwaway development tool, not checked into this repo.
 
 ## The keycap rendering primitive
 
@@ -232,10 +246,10 @@ Three tones (`GREEN`/`RED`/`SLATE`), each a `(light, mid, deep)` triple used for
 
 | Key id | Does |
 |---|---|
-| `key.fatfingert.toggle` | master switch on/off (kept from earlier versions, so an existing binding survives) |
 | `key.fatfingert.open_menu` | open the Fatfingert panel |
 | `key.fatfingert.toggle_inventory_button` | show/hide the inventory-screen button |
-| `key.fatfingert.toggle_lock_contents` | Lock Contents for the active preset |
+| `key.fatfingert.toggle_warnings` | Warnings (the action-bar message when an input is blocked) |
+| `key.fatfingert.toggle_lock_contents` | Lock Contents for the active preset (does nothing on None) |
 | `key.fatfingert.toggle_strict_shift` | Strict Shift |
 | `key.fatfingert.next_preset` / `previous_preset` | cycle presets |
 
@@ -243,7 +257,7 @@ Because they're ordinary key mappings they save to `options.txt`, show up under 
 
 The panel's own **Keybinds** screen (`KeybindsScreen`) edits the same mappings the way vanilla's controls screen does: `setKey()` + `KeyMapping.resetMapping()`, and `options.save()` in `removed()`. While it's waiting for a key, Escape unbinds, middle/side mouse buttons bind, and left/right click cancel instead — a toggle bound to a swing or use would fire constantly. A key that another mapping also uses is drawn red, with the clash listed in its tooltip.
 
-Hotkeys that aren't here — rename, add/delete preset, the slot keycaps, Add Item — only make sense with the panel already open.
+Hotkeys that aren't here — the preset menu, rename, add/delete preset, the slot keycaps, Add Item — only make sense with the panel already open. There's no on/off hotkey any more (3.0.x had one); cycling to None with next/previous preset does the same job.
 
 ## Mod Menu integration
 
@@ -336,9 +350,10 @@ src/main/resources/
 
 Open your inventory and click the **keycap-shaped button** next to the recipe book, open **Mod Menu → Fatfingert → Configure**, or bind the **Open Fatfingert Menu** hotkey.
 
-- **On / Off** (top-right of the header) is the master switch. Everything else in the mod short-circuits to a no-op while this is off.
-- **Preset row:** `‹` / `›` cycle presets. **Click the preset name** to rename it inline — Enter or clicking away saves, Escape cancels. `+` creates a new preset and drops straight into naming it. `−` deletes the active preset; if it holds any rules the button arms (turns red, shows `✓`) and needs a second click to confirm, so a stray click can't destroy a loadout. The last remaining preset can't be deleted.
-- **Lock Contents** (per-preset), **Strict Shift** and **Inventory Button** (both global) sit in one row; hover any of them for the exact behavior. Hiding the inventory button leaves Mod Menu or the hotkey as the way back in.
+- **The mod is always on.** To stand it down, switch to the built-in **None** preset (or any preset with nothing guarded). None can't be edited, renamed or deleted, so it's always there.
+- **Inventory Button** (top-right of the header) shows or hides the launcher button in your inventory. Hiding it leaves Mod Menu or the hotkey as the way back in.
+- **Preset row:** **click the preset name** to open a list of every preset and pick one. **Right-click it** to rename it inline — Enter or clicking away saves, Escape cancels. `‹` / `›` step through presets one at a time. `+` creates a new preset and drops straight into naming it. `−` deletes the active preset; if it holds any rules the button arms (turns red, shows `✓`) and needs a second click to confirm, so a stray click can't destroy a loadout.
+- **Lock Contents** (per-preset), **Strict Shift** and **Warnings** (both global) sit in one row; hover any of them for the exact behavior. Warnings — the red action-bar message when something gets blocked — are off by default.
 - **The keycap row** is your inventory: `1`–`9` are hotbar slots, `OH` is the offhand. A guarded slot sits pressed and green, showing the item it's reserved for; an unguarded slot stands tall in slate. Click a key to select it (click again to deselect), then **+ Add Item** opens the picker.
 - **Item picker:** search by name or id; click an item to allow it, click an already-allowed item (ringed in green) to remove it again.
 - Individual items in the allow-list have a **✕** to remove just that one.

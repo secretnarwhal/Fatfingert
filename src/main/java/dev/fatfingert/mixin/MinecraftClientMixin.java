@@ -26,7 +26,7 @@ public abstract class MinecraftClientMixin {
 
     @Inject(method = "handleKeybinds", at = @At("HEAD"))
     private void fatfingert$filterInputs(CallbackInfo ci) {
-        if (player == null || !Fatfingert.isEnabled()) return;
+        if (player == null) return;
 
         String swapReason = Fatfingert.handSwapBlockReason(player);
         if (swapReason != null) {

@@ -42,14 +42,15 @@ public class ConfigLauncherButton extends AbstractWidget {
         FatTheme.keycap(g, x + 9, y + 3, 4, 4, 2, false, FatTheme.Tone.RED, false);
 
         if (hot) {
-            boolean on = Fatfingert.isEnabled();
+            int guarded = Fatfingert.guardedSlotCount();
+            String preset = Fatfingert.prettyPreset(Fatfingert.config().activePreset);
             g.setTooltipForNextFrame(Minecraft.getInstance().font,
                     List.of(
                             Component.literal("Fatfingert").withStyle(ChatFormatting.WHITE),
-                            Component.literal(on
-                                    ? Fatfingert.guardedSlotCount() + " slot(s) guarded"
-                                    : "Currently off")
-                                    .withStyle(on ? ChatFormatting.GREEN : ChatFormatting.RED)
+                            Component.literal(preset + " · " + (guarded > 0
+                                    ? guarded + " slot(s) guarded"
+                                    : "nothing guarded"))
+                                    .withStyle(guarded > 0 ? ChatFormatting.GREEN : ChatFormatting.RED)
                     ),
                     Optional.empty(), mouseX, mouseY);
         }

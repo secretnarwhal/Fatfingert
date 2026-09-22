@@ -206,6 +206,14 @@ public final class FatTheme {
         g.fill(x + 5, y + 5, x + 7, y + 7, color);
     }
 
+    /** A 5x3 caret, pointing down (or up), for things that open a menu. */
+    public static void caret(GuiGraphics g, int x, int y, boolean down, int color) {
+        for (int i = 0; i < 3; i++) {
+            int row = down ? y + i : y + 2 - i;
+            g.fill(x + i, row, x + 5 - i, row + 1, color);
+        }
+    }
+
     /** 1px outline drawn just outside a rect, used for focus/selection rings. */
     public static void outlineGlow(GuiGraphics g, int x, int y, int w, int h, int color) {
         g.fill(x + 1, y, x + w - 1, y + 1, color);

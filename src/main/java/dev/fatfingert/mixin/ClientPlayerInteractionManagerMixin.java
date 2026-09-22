@@ -23,7 +23,7 @@ public class ClientPlayerInteractionManagerMixin {
     private void fatfingert$onClickSlot(int containerId, int slotId, int button,
                                         ClickType clickType, Player player,
                                         CallbackInfo ci) {
-        if (!Fatfingert.isEnabled() || player == null) return;
+        if (player == null) return;
 
         String reason = Fatfingert.clickBlockReason(player, slotId, button, clickType);
         if (reason != null) {

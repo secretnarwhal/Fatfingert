@@ -16,7 +16,8 @@ import java.util.function.BooleanSupplier;
 
 /**
  * A labelled row with a sliding ON/OFF pill on the right. Reads its own state
- * every frame, so callers only have to flip the underlying config value.
+ * every frame, so callers only have to flip the underlying config value. An
+ * inactive chip is drawn greyed out but still explains itself on hover.
  */
 public class ToggleChip extends AbstractWidget {
 
@@ -57,8 +58,8 @@ public class ToggleChip extends AbstractWidget {
     @Override
     protected void renderWidget(GuiGraphics g, int mouseX, int mouseY, float delta) {
         Font font = Minecraft.getInstance().font;
-        boolean on = state.getAsBoolean();
-        boolean hot = isHoveredOrFocused();
+        boolean on = state.getAsBoolean() && this.active;
+        boolean hot = isHoveredOrFocused() && this.active;
         int x = getX();
         int y = getY();
         int w = getWidth();
@@ -81,7 +82,7 @@ public class ToggleChip extends AbstractWidget {
         Component shown = font.width(current) > textRoom && shortLabel != null ? shortLabel : current;
         int textY = y + (h - font.lineHeight) / 2 + 1;
         g.drawString(font, font.plainSubstrByWidth(shown.getString(), textRoom), x + 7, textY,
-                on ? FatTheme.TEXT : FatTheme.TEXT_DIM, false);
+                !this.active ? FatTheme.TEXT_MUTED : on ? FatTheme.TEXT : FatTheme.TEXT_DIM, false);
 
         // Pill
         int pillX = x + w - PILL_W - 5;
@@ -95,7 +96,7 @@ public class ToggleChip extends AbstractWidget {
         FatTheme.roundRect(g, knobX, pillY + 2, 7, PILL_H - 4,
                 on ? accent : FatTheme.SLATE);
 
-        if (hot && description != null) {
+        if (isHoveredOrFocused() && description != null) {
             List<FormattedCharSequence> lines = new ArrayList<>();
             lines.add(current.getVisualOrderText());
             lines.addAll(font.split(description, TOOLTIP_W));
